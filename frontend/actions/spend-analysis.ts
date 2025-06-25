@@ -1,0 +1,226 @@
+'use server';
+
+import { auth } from "@clerk/nextjs/server";
+
+import { fetcher } from "@/lib/fetcher";
+import { getUserDetail } from "./settings";
+import { HeaderViewType, SpendingByCommodityType, SpendingByLocationType, SpendingByMonthType, SpendingBySupplierType, SpendingByTopSupplierType } from "@/lib/types";
+
+export async function getSpendingHeaderView(): Promise<HeaderViewType | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/headerview/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function getSpendingBySupplier(): Promise<SpendingBySupplierType[] | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/spending/supplier/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data.supplier_spend;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function getSpendingByMonth(): Promise<SpendingByMonthType[] | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/spending/month/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data.month_spend;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function getSpendingByCommodity(): Promise<SpendingByCommodityType[] | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/spending/commodity/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data.commodity_spend;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function getSpendingByLocation(): Promise<SpendingByLocationType[] | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/spending/location/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data.location_spend;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function getSpendingByTopSupplier(): Promise<{ items: SpendingByTopSupplierType[], total: number } | null> {
+    try {
+        const token = await auth().getToken();
+        const userData = await getUserDetail();
+        const companyId = userData?.CompanyDetailsID;
+        const data = await fetcher(`${process.env.API_URL}/spending/top_supplier/${companyId}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            next: {
+                revalidate: 60,
+            }
+        });
+
+        return data
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+export async function uploadCSV(formData: FormData): Promise<any> {
+    try {
+        const token = await auth().getToken()
+        const userData = await getUserDetail();
+        const company_id = userData?.CompanyDetailsID;
+        const file = formData.get('file') as File
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            return { success: false, error: 'File must be a CSV' };
+        }
+
+        // Get the file buffer
+        const fileBuffer = await file.arrayBuffer();
+
+        // Create a new FormData instance for the API call
+        const apiFormData = new FormData();
+
+        // Add the file to the FormData
+        const fileBlob = new Blob([fileBuffer], { type: 'text/csv' });
+        apiFormData.append('file', fileBlob, file.name);
+
+        const res = await fetch(`${process.env.API_URL}/upload/csv/${company_id}`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            body: apiFormData,
+        })
+
+        if (!res.ok) {
+            let errorMessage = 'Failed to upload CSV';
+            try {
+                const errorData = await res.json();
+                console.log('!', errorData)
+                errorMessage = errorData.message || errorMessage;
+            } catch (e) {
+                errorMessage = res.statusText || errorMessage;
+            }
+
+            return { success: false, error: errorMessage, status: res.status };
+        }
+
+        // Parse the successful response
+        const data = await res.json();
+
+        return {
+            success: true,
+            data,
+            message: 'CSV uploaded successfully'
+        };
+    } catch (error) {
+        console.error('Error uploading CSV:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'An unexpected error occurred'
+        };
+    }
+}
+
+export async function downloadCSV(): Promise<any> {
+    try {
+        const token = await auth().getToken()
+        const userData = await getUserDetail();
+        const company_id = userData?.CompanyDetailsID;
+        const res = await fetch(`${process.env.API_URL}/download/csv/${company_id}`, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        })
+        const blob = await res.blob()
+
+        const buffer = await blob.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const mimeType = blob.type;
+        const dataUrl = `data:${mimeType};base64,${base64}`;
+
+        // Return serializable data
+        return { dataUrl, type: blob.type, size: blob.size };
+        // return data
+    } catch (error) {
+        console.log(error)
+    }
+    return null
+}
+
+function blobToBase64(blob: Blob) {
+    return new Promise((resolve, _) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+    });
+}

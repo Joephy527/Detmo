@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  detmo-frontend:
+    image: shikhars22/detmo-frontend
+    build:
+      context: ./
+      target: dev
+      dockerfile: Dockerfile
+    volumes:
+        - .:/detmo-frontend
+        - /detmo-frontend/node_modules
+        - /detmo-frontend/.next
+    ports:
+      - "3000:3000"
