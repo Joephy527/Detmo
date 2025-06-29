@@ -3,51 +3,20 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/api(.*)"]);
 
-const isBillingProtectedRoute = createRouteMatcher([
-  "/dashboard/projects(.*)",
-  "/dashboard/settings(.*)"
-]);
+export default clerkMiddleware((auth, req) => {
+  if (!isProtectedRoute(req)) return NextResponse.next();
 
-async function getUserDetail(userId: string, token: string) {
-  if (!userId) return null;
-
+  let session;
   try {
-    // Replace this with your actual implementation to fetch user details
-    const res = await fetch(`${process.env.API_URL}/users?user_id=${userId}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      next: {
-        revalidate: 600
-      }
-    })
-
-    const userData = await res.json();
-
-    return userData.items[0];
-  } catch (error) {
-    console.error("Error fetching user details:", error);
-    return null;
+    session = auth().protect();
+  } catch {
+    const signInUrl = new URL("/sign-in", req.url);
+    return NextResponse.redirect(signInUrl);
   }
-}
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    const session = auth().protect();
-    // For billing-protected routes, check billing status
-    if (isBillingProtectedRoute(req)) {
-      const token = await session.getToken();
-      // const userDetails = await getUserDetail(session.userId, token!!);
-
-      // Redirect to pricing page if billing is not paid
-      // if (!userDetails || userDetails.Billing !== "Paid") {
-      //   const url = new URL("/pricing", req.url);
-      //   return NextResponse.redirect(url);
-      // }
-    }
-  };
-  return NextResponse.next()
+  return NextResponse.next();
 });
+
 export const config = {
-  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+  matcher: ["/dashboard/:path*", "/api/:path*"],
 };
