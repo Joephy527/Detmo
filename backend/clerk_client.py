@@ -1,14 +1,21 @@
 import os
 
 import requests
+from clerk_backend_api import Clerk
 from dotenv import load_dotenv
 
 load_dotenv()
 
 CLERK_API_URL = os.getenv("CLERK_API_URL", "")
 CLERK_API_KEY = os.getenv("CLERK_API_KEY", "")
-CLERK_JWT_KEY = os.getenv("CLERK_JWT_KEY", "")
+
+public_key = os.getenv("CLERK_JWT_KEY", "")
+CLERK_JWT_KEY = public_key.replace("\\n", "\n")
+
 CLERK_ISSUER = os.getenv("CLERK_ISSUER", "")
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "")
+
+clerk_client = Clerk(bearer_auth=os.getenv("CLERK_SECRET_KEY"))
 
 
 # Clerk API integration

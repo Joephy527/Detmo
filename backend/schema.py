@@ -1,37 +1,68 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Generic, List, Optional, TypeVar
 from datetime import date
+from typing import Generic, List, Optional, TypeVar
+
+from pydantic import BaseModel, EmailStr, Field
+from pydantic.generics import GenericModel
+
+
+class RoleResponse(BaseModel):
+    UserRole: str
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+
+class UserWithRoleResponse(BaseModel):
+    ClerkID: str
+    UserName: Optional[str]
+    Email: str
+    Role: str
+    RoleID: str
+
+
+class UserListResponse(BaseModel):
+    items: List[UserWithRoleResponse]
 
 
 class UserResponse(BaseModel):
     ClerkID: str = Field(..., example="123e4567-e89b-12d3-a456-426614174001")
     UserName: str = Field(..., example="John Doe")
     Email: str = Field(..., example="johndoe@example.com")
-    Password: str = Field(..., example="hashed_password")
     RoleID: str = Field(..., example="123e4567-e89b-12d3-a456-426614174002")
-    CompanyDetailsID: Optional[str] = Field(..., example="123e4567-e89b-12d3-a456-426614174003")
+    CompanyDetailsID: Optional[str] = Field(
+        ..., example="123e4567-e89b-12d3-a456-426614174003"
+    )
+
+    Role: Optional[RoleResponse]
 
     class Config:
         orm_mode = True
-        from_attributes = True  # This line enables the from_orm method to work correctly
+        from_attributes = (
+            True  # This line enables the from_orm method to work correctly
+        )
+
 
 # Reusable pagination function
-T = TypeVar('T')
+T = TypeVar("T")
 
-class PaginatedResponse(Generic[T], BaseModel):
+
+class PaginatedResponse(GenericModel, Generic[T]):
     total: int
     items: List[T]
 
     class Config:
         orm_mode = True
-        from_attributes = True  # This line enables the from_orm method to work correctly
+        from_attributes = (
+            True  # This line enables the from_orm method to work correctly
+        )
 
 
 class SourcingProjectCreate(BaseModel):
     Name: str
     Objective: str
     ProjectType: str
-    Saving:float
+    Saving: float
     StartDate: Optional[date]
     EndDate: Optional[date]
     Phase: str
@@ -43,11 +74,12 @@ class SourcingProjectCreate(BaseModel):
     ProjectSponserEmail: Optional[EmailStr]
     FinancePocEmail: Optional[EmailStr]
     ProjectInterval: Optional[EmailStr]
-   
+
     CommodityName: str
     CommodityAffectedProduct: str
     CommodityPartNumber: str
     CommodityPartDescription: str
+
 
 class SourcingProjectUpdate(BaseModel):
     Name: Optional[str]
@@ -70,16 +102,20 @@ class SourcingProjectUpdate(BaseModel):
     CommodityPartNumber: Optional[str]
     CommodityPartDescription: Optional[str]
 
+
 class CommodityDetailsResponse(BaseModel):
     CommodityID: str = Field(..., example="841f5124-cd92-49ad-be1c-3807f1ec1f4f")
     CommodityName: str = Field(..., example="Example Commodity")
     AffectedProduct: Optional[str] = Field(None, example="Example Product")
     PartNumber: Optional[str] = Field(None, example="12345")
     PartDescription: Optional[str] = Field(None, example="Example Part Description")
+
     class Config:
         orm_mode = True
         from_attributes = True
-   # Example response for documentation
+
+
+# Example response for documentation
 
 # class CompanyDetailResp(BaseModel):
 #     CompanyDetailsID:str
@@ -95,47 +131,56 @@ class SourcingProjectDetailsResponse(BaseModel):
     Objective: Optional[str] = Field(None, example="Project Objective")
     Saving: float = Field(..., example=1000.0)
     ProjectType: Optional[str] = Field(None, example="Type A")
-    StartDate: date = Field(..., example=date(2024,6,21))
+    StartDate: date = Field(..., example=date(2024, 6, 21))
     EndDate: Optional[date] = Field(None, example=date(2024, 8, 1))
     Phase: Optional[str] = Field(None, example="Example Phase")
     Status: Optional[str] = Field(None, example="Example Status")
     SourcingPmEmail: Optional[EmailStr] = Field(None, example="sourcing@example.com")
     ScmManagerEmail: Optional[EmailStr] = Field(None, example="scm@example.com")
-    SelectedSupplierPmEmail: Optional[EmailStr] = Field(None, example="supplier@example.com")
+    SelectedSupplierPmEmail: Optional[EmailStr] = Field(
+        None, example="supplier@example.com"
+    )
     BuyerEmail: Optional[EmailStr] = Field(None, example="buyer@example.com")
     ProjectSponserEmail: Optional[EmailStr] = Field(None, example="sponsor@example.com")
     FinancePocEmail: Optional[EmailStr] = Field(None, example="finance@example.com")
     ProjectInterval: Optional[str] = Field(None, example="Interval A")
-    CompanyDetailsID: Optional[str] = Field(None, example="08046a66-63a8-428a-975a-b73271aab1b7") 
+    CompanyDetailsID: Optional[str] = Field(
+        None, example="08046a66-63a8-428a-975a-b73271aab1b7"
+    )
     Commodity: CommodityDetailsResponse
 
     class Config:
         orm_mode = True
         from_attributes = True
-   
+
 
 class CurrencyDetailsCreate(BaseModel):
     Currency: Optional[str] = Field(..., example="USD")
 
+
 class CompanyDetailsCreate(BaseModel):
     DisplayName: Optional[str]
-    PhoneNumber: Optional[str] 
+    PhoneNumber: Optional[str]
     Email: Optional[EmailStr]
-    LegalName: Optional[str] 
+    LegalName: Optional[str]
     RegistrationNumber: Optional[str]
-    VatNumber: Optional[str] 
-    Address: Optional[str] 
-    City: Optional[str] 
-    Country: Optional[str] 
-    Zip: Optional[str] 
+    VatNumber: Optional[str]
+    Address: Optional[str]
+    City: Optional[str]
+    Country: Optional[str]
+    Zip: Optional[str]
     Currency: CurrencyDetailsCreate
 
+
 class CurrencyUpdate(BaseModel):
-    Currency: Optional[str] = Field(..., example="USD")
+    Currency: Optional[str]
+    CurrencyID: Optional[str]
+
 
 class CompanyUpdate(BaseModel):
-    DisplayName: Optional[str] = Field(..., example="Detmo")
-    PhoneNumber: Optional[str] = Field(..., example="Detmo")
+    CompanyDetailsID: Optional[str]
+    DisplayName: Optional[str]
+    PhoneNumber: Optional[str]
     Email: Optional[str]
     LegalName: Optional[str]
     RegistrationNumber: Optional[str]
@@ -147,21 +192,11 @@ class CompanyUpdate(BaseModel):
     Currency: Optional[CurrencyUpdate]
 
 
-
-
-
-
-
-
 class DeleteUserResponse(BaseModel):
-    message: str 
+    message: str
 
     class Config:
-        schema_extra = {
-            "example": {
-                "message": "User deleted successfully"
-            }
-        }
+        schema_extra = {"example": {"message": "User deleted successfully"}}
 
 
 class CurrencySchema(BaseModel):
@@ -170,6 +205,7 @@ class CurrencySchema(BaseModel):
 
     class Config:
         orm_mode = True
+
 
 class CompanyDetailsInfoSchema(BaseModel):
     CompanyDetailsID: str = Field(..., example="d3dd7c6c-a6ba-46fc-be40-e6d2ebd6d466")
@@ -192,22 +228,20 @@ class CompanyDetailsInfoSchema(BaseModel):
 class UpdateUserRoleRequest(BaseModel):
     user_role: str = Field(..., example="admin")
 
+
 class ClerkUserCreated(BaseModel):
     data: dict
     object: str
     type: str
 
+
 class HeaderViewResponse(BaseModel):
-    CompanyDetailsID:str
+    CompanyDetailsID: str
     total_spend: float = Field(..., example="7811.16")
     supplier_count: int = Field(..., example="5")
     commodity_count: int = Field(..., example="10")
     location_count: int = Field(..., example="3")
     po_count: int = Field(..., example="4")
-
-
-
-
 
 
 class SupplierEvaluationCreate(BaseModel):
@@ -222,11 +256,15 @@ class SupplierEvaluationCreate(BaseModel):
     OrderFulfilmentRateRank: int
     LocationRank: int
 
+
 class SupplierEvaluationUpdate(SupplierEvaluationCreate):
     pass
- 
+
+
 class SupplierEvaluationResponse(BaseModel):
-    SupplierEvaluationID: str = Field(..., example="d3dd7c6c-a6ba-46fc-be40-e6d2ebd6d466") 
+    SupplierEvaluationID: str = Field(
+        ..., example="d3dd7c6c-a6ba-46fc-be40-e6d2ebd6d466"
+    )
     SupplierName: str = Field(..., example="Vendor 1")
     CompanySizeRank: int = Field(..., example="4")
     CriticalPartsRank: int = Field(..., example="4")
@@ -247,13 +285,15 @@ class SupplierEvaluationResponse(BaseModel):
 
 
 class CommentCreate(BaseModel):
-    Comment: str 
+    Comment: str
     CommentDate: date
     UserID: str
-    
+
+
 class UserCommentResponse(BaseModel):
     ClerkID: str
     UserName: str
+
 
 class CommentResponseWithUser(BaseModel):
     CommentID: str
@@ -264,9 +304,11 @@ class CommentResponseWithUser(BaseModel):
     ClerkID: str
     User: UserCommentResponse
 
+
 class UserProjectLink(BaseModel):
     ClerkID: str
     SourcingProjectID: str
+
 
 class UserProjectUpdate(BaseModel):
     newClerkID: str = None
@@ -275,15 +317,15 @@ class UserProjectUpdate(BaseModel):
 
 class OrderRequest(BaseModel):
     amount: float
-    currency: str = 'INR'
+    currency: str = "INR"
     receipt: str
     description: str
     payment_plan: str
     payment_method: str
     # company_details_id: str
 
+
 class PaymentVerification(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
-
