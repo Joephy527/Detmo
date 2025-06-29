@@ -1,5 +1,6 @@
 import os
 
+import psycopg2
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -9,6 +10,9 @@ load_dotenv()
 
 # DB_URL = os.getenv("DB_URL",'postgresql://postgres:shiv@localhost/ssdev')
 DB_URL = os.getenv("DB_URL", "")
+
+# Connect to the Postgres database
+conn = psycopg2.connect(DB_URL)
 
 engine = create_engine(DB_URL, echo=True, pool_recycle=1800)
 # engine2 = create_engine(DB_URL, echo=True)
