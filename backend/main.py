@@ -2,6 +2,7 @@ import csv
 import logging
 from io import StringIO
 from typing import List, Optional
+from datetime import datetime
 
 import pandas as pd
 import razorpay
@@ -347,6 +348,7 @@ async def create_user(db: Session, user_data: dict, use_existing_company: bool):
 
         return db_user
     except Exception as e:
+        db.rollback()
         logger.error(f"Error creating user: {e}")
         raise
 
@@ -652,30 +654,71 @@ async def upload_csv(
     company_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_admin),
+    current_user: UserDetails = Depends(get_current_user),
 ):
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files can be uploaded")
-
+    # Check if the company exists
     company = (
-        db.query(CompanyDetailsInfo).filter_by(CompanyDetailsID=company_id).first()
+        db.query(CompanyDetailsInfo)
+        .filter(CompanyDetailsInfo.CompanyDetailsID == company_id)
+        .first()
     )
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    # Authorization check
+    company_user = ensure_company_user_relation(
+        db, user_id=current_user.ClerkID, company_id=company_id
+    )
+    if company_user.RoleID != ADMIN_ROLE_ID:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files can be uploaded")
 
     try:
         contents = await file.read()
         csv_data = contents.decode("utf-8").splitlines()
         csv_reader = csv.reader(csv_data)
 
-        next(csv_reader)  # Skip the header row
-        duplicates = []
-        new_entries = []
+        header = next(csv_reader, None)
+        if not header or len(header) < 12:
+            raise HTTPException(
+                status_code=400,
+                detail="CSV header format is incorrect or missing columns",
+            )
 
-        for row in csv_reader:
-            # Check if the commodity already exists
-            CommodityName = row[0]
-            PartNumber = row[1]
+        duplicates = set()
+        new_entries = set()
+
+        for idx, row in enumerate(csv_reader, start=2):
+            if len(row) < 12:
+                raise HTTPException(
+                    status_code=400, detail=f"Row {idx} is malformed: {row}"
+                )
+
+            try:
+                CommodityName = row[0]
+                PartNumber = row[1]
+                VendorName = row[3]
+                MaterialGroupNumber = row[4]
+                MaterialGroupDescription = row[5]
+                OrderQuantity = float(row[6])
+                NetPrice = float(row[7])
+                ToBeDeliveredQty = float(row[9])
+                Location = row[10]
+                Country = row[11]
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid numeric value in row {idx}: {ve}",
+                )
+
+            try:
+                DocumentDate = datetime.strptime(row[2], "%d/%m/%Y").date()  # converts '13/05/2024' to datetime.date(2024, 5, 13)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date format in row {idx}: {row[2]}")
+
+            # === Commodity ===
             Commodity = (
                 db.query(CommodityDetails)
                 .filter_by(
@@ -692,15 +735,12 @@ async def upload_csv(
                     CompanyDetailsID=company_id,
                 )
                 db.add(Commodity)
-                db.commit()  # Commit the product to get its ID
-                db.refresh(Commodity)  # Refresh to get the ID
-                new_entries.append("Commodity: " + CommodityName)
+                db.flush()
+                new_entries.add(f"Commodity: {CommodityName}")
             else:
-                duplicates.append("Commodity: " + CommodityName)
+                duplicates.add(f"Commodity: {CommodityName}")
 
-            # Check if the material group already exists
-            MaterialGroupNumber = row[4]
-            MaterialGroupDescription = row[5]
+            # === Material Group ===
             MaterialGroup = (
                 db.query(MaterialGroupDetails)
                 .filter_by(
@@ -717,16 +757,12 @@ async def upload_csv(
                     CompanyDetailsID=company_id,
                 )
                 db.add(MaterialGroup)
-                db.commit()  # Commit the product to get its ID
-                db.refresh(MaterialGroup)  # Refresh to get the ID
-                new_entries.append("MaterialGroup: " + MaterialGroupNumber)
+                db.flush()
+                new_entries.add(f"MaterialGroup: {MaterialGroupNumber}")
             else:
-                duplicates.append("MaterialGroup: " + MaterialGroupNumber)
+                duplicates.add(f"MaterialGroup: {MaterialGroupNumber}")
 
-            # Check if the vendor already exists
-            VendorName = row[3]  # Assuming the fourth column is 'vendorName'
-            Location = row[10]
-            Country = row[11]
+            # === Vendor ===
             Vendor = (
                 db.query(VendorDetails)
                 .filter_by(
@@ -745,25 +781,19 @@ async def upload_csv(
                     CompanyDetailsID=company_id,
                 )
                 db.add(Vendor)
-                db.commit()  # Commit the product to get its ID
-                db.refresh(Vendor)  # Refresh to get the ID
-                new_entries.append("Vendor: " + VendorName)
+                db.flush()
+                new_entries.add(f"Vendor: {VendorName}")
             else:
-                duplicates.append("Vendor: " + VendorName)
-                # duplicates.append("Vendor:" + Location)
-                # duplicates.append("vendor:" + Country)
+                duplicates.add(f"Vendor: {VendorName}")
 
-            # Use the existing currency of the company
-            Currency = company.Currency
-
-            # Add the purchase order details only if it's unique
+            # === Purchase Order ===
             PurchaseOrderExists = (
                 db.query(PurchaseOrderDetails)
                 .filter_by(
-                    OrderQuantity=float(row[6]),
-                    NetPrice=float(row[7]),
-                    ToBeDeliveredQty=float(row[9]),
-                    DocumentDate=row[2],
+                    OrderQuantity=OrderQuantity,
+                    NetPrice=NetPrice,
+                    ToBeDeliveredQty=ToBeDeliveredQty,
+                    DocumentDate=DocumentDate,
                     CommodityID=Commodity.CommodityID,
                     VendorID=Vendor.VendorID,
                     MaterialGroupID=MaterialGroup.MaterialGroupID,
@@ -774,35 +804,31 @@ async def upload_csv(
 
             if not PurchaseOrderExists:
                 PurchaseOrder = PurchaseOrderDetails(
-                    OrderQuantity=float(row[6]),
-                    NetPrice=float(row[7]),
-                    ToBeDeliveredQty=float(row[9]),
-                    DocumentDate=row[2],
+                    OrderQuantity=OrderQuantity,
+                    NetPrice=NetPrice,
+                    ToBeDeliveredQty=ToBeDeliveredQty,
+                    DocumentDate=DocumentDate,
                     CommodityID=Commodity.CommodityID,
                     VendorID=Vendor.VendorID,
                     MaterialGroupID=MaterialGroup.MaterialGroupID,
                     CompanyDetailsID=company_id,
                 )
                 db.add(PurchaseOrder)
-                new_entries.append(
-                    "PurchaseOrder: " + row[2]
-                )  # Assuming row[2] is unique per order
+                new_entries.add(f"PurchaseOrder: {DocumentDate}")
             else:
-                duplicates.append("PurchaseOrder: " + row[2])
+                duplicates.add(f"PurchaseOrder: {DocumentDate}")
 
         db.commit()
+
         return {
             "message": "CSV file uploaded and stored successfully",
-            "new_entries": new_entries,
-            "duplicates": duplicates,
+            "new_entries": list(new_entries),
+            "duplicates": list(duplicates),
         }
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to process CSV file. Check the format and try again. Error: {str(e)}",
-        ) from e
+        raise HTTPException(status_code=500, detail=f"CSV processing failed: {str(e)}")
 
 
 @app.get("/v1/download/csv/{company_id}", tags=["CSV Operations"])
@@ -831,10 +857,10 @@ async def download_csv(
             "MaterialGroupDescription",
             "OrderQuantity",
             "NetPrice",
+            "Currency",
             "ToBeDeliveredQty",
             "Location",
             "Country",
-            "Currency",
         ]
     )
 
@@ -864,10 +890,10 @@ async def download_csv(
                 material_group.MaterialGroupDescription,
                 po.OrderQuantity,
                 po.NetPrice,
+                currency,
                 po.ToBeDeliveredQty,
                 vendor.Location,
                 vendor.Country,
-                currency,
             ]
         )
 
@@ -1366,17 +1392,27 @@ def update_company(
 async def delete_company(
     company_id: str,
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_admin),
+    current_user: UserDetails = Depends(get_current_user),
 ):
     db_company = (
         db.query(CompanyDetailsInfo)
         .filter(CompanyDetailsInfo.CompanyDetailsID == company_id)
         .first()
     )
+
     if not db_company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    company_user = ensure_company_user_relation(
+        db, user_id=current_user.ClerkID, company_id=company_id
+    )
+
+    if company_user.RoleID != ADMIN_ROLE_ID:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
     db.delete(db_company)
     db.commit()
+
     return {"message": "Company deleted successfully"}
 
 

@@ -4,26 +4,13 @@ import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { revalidatePath, revalidateTag } from "next/cache";
 
-import {
-  CompanyDetailsType,
-  RoleType,
-  UserEditType,
-  UserType,
-} from "@/lib/types";
+import { CompanyDetailsType, UserEditType, UserType } from "@/lib/types";
 import { fetcher } from "@/lib/fetcher";
 
 export async function getUserDetail(): Promise<UserType | null> {
   try {
     const user = auth();
 
-    const savedUser = cookies().get("user")?.value;
-
-    if (savedUser) {
-      const savedUserJson = JSON.parse(savedUser);
-      if (savedUserJson !== null && savedUserJson?.ClerkID === user.userId) {
-        return savedUserJson;
-      }
-    }
     const token = await user.getToken();
     const data = await fetcher(
       `${process.env.API_URL}/users?user_id=${user.userId}`,
@@ -36,8 +23,6 @@ export async function getUserDetail(): Promise<UserType | null> {
         },
       },
     );
-
-    console.dir({ users: data });
 
     return data.items[0];
   } catch (error) {
