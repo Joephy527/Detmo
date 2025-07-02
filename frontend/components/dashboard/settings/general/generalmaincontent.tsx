@@ -156,7 +156,7 @@ const GeneralSettings: FC<Props> = ({ company_details_promise }) => {
           placeholder="Enter zip"
         />
       </div>
-      {userRole?.toLowerCase() === "admin" && (
+      {userRole?.toLowerCase().includes("admin") && (
         <DeleteCompany company_id={company_details.CompanyDetailsID ?? ""} />
       )}
     </div>
