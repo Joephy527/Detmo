@@ -27,7 +27,7 @@ class UserDetails(Base):
     RoleID = Column(String(36), ForeignKey("RoleDetails.RoleID"))
     CompanyDetailsID = Column(String(36), ForeignKey("CompanyDetails.CompanyDetailsID"))
     DefaultCompanyDetailsID = Column(
-        String(36), ForeignKey("CompanyDetails.CompanyDetailsID")
+        String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), nullable=False
     )
     IsPaid = Column(Boolean, default=False)
 

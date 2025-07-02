@@ -1,20 +1,25 @@
 import csv
 import logging
+from datetime import datetime
 from io import StringIO
 from typing import List, Optional
-from datetime import datetime
 
 import pandas as pd
 import razorpay
 from clerk import *
 from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Request,
                      UploadFile)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
                                   get_swagger_ui_oauth2_redirect_html)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from sqlalchemy.orm import Session, joinedload, sessionmaker
+from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
+                            SQLAlchemyError)
+from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
+from tenacity import (retry, retry_if_exception_type, stop_after_attempt,
+                      wait_exponential, wait_fixed)
 
 from clerk_client import clerk_client
 from database import *
@@ -146,84 +151,197 @@ def get_default_role(db: Session):
     return role
 
 
-def get_default_currency(db: Session):
+# Retry settings: 3 attempts, wait 1 second between attempts
+RETRY_KWARGS = dict(
+    wait=wait_fixed(1),
+    stop=stop_after_attempt(3),
+    retry=retry_if_exception_type((IntegrityError, OperationalError)),
+)
+
+
+def get_or_create_default_currency(db: Session):
     currency = (
         db.query(CurrencyDetails).filter(CurrencyDetails.Currency == "USD").first()
     )
+
     if not currency:
         currency = CurrencyDetails(Currency="USD")
         db.add(currency)
         db.commit()
         db.refresh(currency)
+
     return currency
+
+
+def create_company(
+    db: Session, user_data: dict, currency_id: str
+) -> CompanyDetailsInfo:
+    """Create or get existing company for a user with comprehensive error handling"""
+    try:
+        clerk_id = user_data["id"]
+        email = user_data["email_addresses"][0]["email_address"]
+
+        # Validate inputs
+        if not clerk_id:
+            raise ValueError("Missing required ClerkID")
+        if not email:
+            raise ValueError("User email is required")
+        if not currency_id:
+            raise ValueError("Currency ID is required")
+
+        # Check for existing company via user's default company
+        existing_user = (
+            db.query(UserDetails)
+            .options(joinedload(UserDetails.DefaultCompany))
+            .filter_by(ClerkID=clerk_id)
+            .first()
+        )
+
+        if existing_user and existing_user.DefaultCompany:
+            return existing_user.DefaultCompany
+
+        # Verify currency exists
+        currency = db.query(CurrencyDetails).get(currency_id)
+        if not currency:
+            raise ValueError(f"Currency with ID {currency_id} not found")
+
+        # Create new company
+        new_company = CompanyDetailsInfo(
+            DisplayName=f"New Company for {user_data['first_name']} {user_data.get('last_name', '')}",
+            PhoneNumber="1234567890",
+            Email=email,
+            LegalName="New Company LLC",
+            RegistrationNumber="123456789",
+            VatNumber="VAT123456",
+            Address="123 New Street",
+            City="New City",
+            Country="New Country",
+            Zip="12345",
+            CurrencyID=currency_id,
+        )
+
+        db.add(new_company)
+        try:
+            db.flush()
+            logger.info(
+                f"Created new company {new_company.CompanyDetailsID} for user {clerk_id}"
+            )
+            return new_company
+        except IntegrityError as e:
+            db.rollback()
+            logger.error(f"Company creation failed for user {clerk_id}: {str(e)}")
+            raise ValueError(
+                "Company creation failed due to database constraints"
+            ) from e
+
+    except KeyError as e:
+        logger.error(f"Missing required field in user data: {str(e)}")
+        raise ValueError(f"Invalid user data: missing {str(e)}") from e
+    except SQLAlchemyError as e:
+        logger.error(f"Database error during company creation: {str(e)}")
+        raise ValueError("Database operation failed") from e
+    except Exception as e:
+        logger.error(f"Unexpected error in create_company: {str(e)}")
+        raise ValueError("Failed to create company") from e
+
+
+def create_user_and_link(
+    db: Session, user_data: dict, role_id: str, company_id: str
+) -> UserDetails:
+    """Create a new user with guaranteed company relationship"""
+    if not company_id:
+        raise ValueError("Company ID must be provided for user creation")
+
+    try:
+        # Verify company exists first
+        company = (
+            db.query(CompanyDetailsInfo).filter_by(CompanyDetailsID=company_id).one()
+        )
+    except NoResultFound:
+        raise ValueError(f"Company with ID {company_id} does not exist")
+
+    email = user_data["email_addresses"][0]["email_address"]
+    db_user = UserDetails(
+        ClerkID=user_data["id"],
+        UserName=f"{user_data['first_name']} {user_data.get('last_name', '')}",
+        Email=email,
+        Password="default_password",  # In production, use proper hashing
+        RoleID=role_id,
+        CompanyDetailsID=company_id,
+        DefaultCompanyDetailsID=company_id,  # Ensured to match CompanyDetailsID
+    )
+
+    db.add(db_user)
+    return db_user
+
+
+def get_or_create_admin_role(db: Session):
+    role = db.query(RoleDetails).filter_by(UserRole="admin").first()
+
+    if not role:
+        role = RoleDetails(UserRole="admin")
+        db.add(role)
+        db.flush()
+
+    return role
 
 
 def ensure_company_user_relation(
     db: Session, user_id: str, company_id: str, default_role_name: str = "user"
 ) -> CompanyUser:
-    """
-    Ensures a CompanyUser relation exists for the given user and company.
-    If not, creates one with the given default role.
-
-    Returns the CompanyUser instance.
-    """
     company_user = (
         db.query(CompanyUser)
         .filter(CompanyUser.UserID == user_id, CompanyUser.CompanyID == company_id)
         .first()
     )
-
     if company_user:
         return company_user
 
-    # Find or create default role
     role = (
         db.query(RoleDetails).filter(RoleDetails.UserRole == default_role_name).first()
     )
     if not role:
         role = RoleDetails(UserRole=default_role_name)
         db.add(role)
-        db.commit()
-        db.refresh(role)
+        db.flush()
         logger.info(f"Created default role '{default_role_name}' with ID {role.RoleID}")
 
-    # Create CompanyUser relationship
     company_user = CompanyUser(
         UserID=user_id,
         CompanyID=company_id,
         RoleID=role.RoleID,
     )
     db.add(company_user)
-    db.commit()
-    db.refresh(company_user)
-
+    db.flush()
     return company_user
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def sync_clerk_user_metadata(user: UserDetails, company_user: CompanyUser):
     """
     Syncs the Clerk user's metadata with the role + paid status.
     Format: "<role>_<paid|unpaid>" in public_metadata["role"].
     """
-    role_name = company_user.Role.UserRole if company_user.Role else "user"
-    full_role = f"{role_name}_paid" if user.IsPaid else role_name
 
-    clerk_user = clerk_client.users.get(user_id=user.ClerkID)
-    current_metadata = clerk_user.public_metadata or {}
+    try:
+        role_name = company_user.Role.UserRole if company_user.Role else "user"
+        full_role = f"{role_name}_paid" if user.IsPaid else role_name
 
-    if current_metadata.get("role") != full_role:
-        clerk_client.users.update_metadata(
-            user_id=user.ClerkID,
-            public_metadata={
-                **current_metadata,
-                "role": full_role,
-            },
-        )
-        logger.info(
-            f"Updated Clerk metadata: role='{full_role}' for user={user.ClerkID}"
-        )
-    else:
-        logger.info(f"Clerk metadata already up-to-date for user={user.ClerkID}")
+        clerk_user = clerk_client.users.get(user_id=user.ClerkID)
+        current_metadata = clerk_user.public_metadata or {}
+
+        if current_metadata.get("role") != full_role:
+            clerk_client.users.update_metadata(
+                user_id=user.ClerkID,
+                public_metadata={**current_metadata, "role": full_role},
+            )
+            logger.info(
+                f"Updated Clerk metadata: role='{full_role}' for user={user.ClerkID}"
+            )
+        else:
+            logger.info(f"Clerk metadata already up-to-date for user={user.ClerkID}")
+    except Exception as e:
+        logger.warning(f"Failed to sync Clerk metadata for user {user.ClerkID}: {e}")
 
 
 @app.post("/webhooks/clerk", tags=["Webhooks"])
@@ -247,7 +365,15 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
 
         # Event-specific handlers
         if event_type == "user.created":
-            await create_user(db, data, use_existing_company)
+            # Create user with retry logic
+            user, company_user = await run_in_threadpool(
+                create_user, db, data, use_existing_company
+            )
+
+            # Sync metadata just once
+            await run_in_threadpool(sync_clerk_user_metadata, user, company_user)
+
+            return {"status": "created", "user_id": user.ClerkID}
 
         elif event_type == "user.updated":
             await update_user(db, data)
@@ -258,14 +384,21 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
         # Only run metadata sync if we have a Clerk user ID
         if clerk_id:
             user = db.query(UserDetails).filter(UserDetails.ClerkID == clerk_id).first()
-
             if user and user.CompanyDetailsID:
-                # Use the internal DB user ID
-                company_user = ensure_company_user_relation(
-                    db=db, user_id=user.ClerkID, company_id=user.CompanyDetailsID
-                )
+                try:
+                    company_user = ensure_company_user_relation(
+                        db=db, user_id=user.ClerkID, company_id=user.CompanyDetailsID
+                    )
+                    db.commit()  # commit company_user addition
 
-                sync_clerk_user_metadata(user=user, company_user=company_user)
+                    # Now safe to update Clerk metadata
+                    sync_clerk_user_metadata(user=user, company_user=company_user)
+
+                except Exception as e:
+                    db.rollback()
+                    logger.error(
+                        f"Failed to ensure company-user relation or sync Clerk metadata: {e}"
+                    )
 
         return {"message": "Webhook received"}
 
@@ -274,83 +407,64 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-async def create_user(db: Session, user_data: dict, use_existing_company: bool):
+@retry(**RETRY_KWARGS)
+def create_user(
+    db: Session, user_data: dict, use_existing_company: bool
+) -> tuple[UserDetails, CompanyUser]:
     try:
-        logger.debug(f"Creating user with data: {user_data}")
+        clerk_id = user_data["id"]
 
-        # Check if user already exists
-        existing_user = db.query(UserDetails).filter_by(ClerkID=user_data["id"]).first()
+        # Check for existing user in a single query
+        existing_user = (
+            db.query(UserDetails)
+            .options(joinedload(UserDetails.DefaultCompany))
+            .filter_by(ClerkID=clerk_id)
+            .first()
+        )
+
         if existing_user:
-            logger.info(f"User already exists: {existing_user}")
-            return existing_user
+            logger.info(f"User already exists: {clerk_id}")
+            company_user = (
+                db.query(CompanyUser)
+                .filter_by(
+                    UserID=existing_user.ClerkID,
+                    CompanyID=existing_user.DefaultCompanyDetailsID,
+                )
+                .first()
+            )
+            return existing_user, company_user
 
-        email_domain = get_email_domain(
-            user_data["email_addresses"][0]["email_address"]
-        )
-        logger.debug(f"Extracted email domain: {email_domain}")
+        # Start transaction implicitly (handled by FastDI's session)
+        default_currency = get_or_create_default_currency(db)
+        admin_role = get_or_create_admin_role(db)
+        company = create_company(db, user_data, default_currency.CurrencyID)
 
-        default_currency = get_default_currency(db)
-        new_company = CompanyDetailsInfo(
-            DisplayName="New Company for "
-            + user_data["first_name"]
-            + " "
-            + user_data.get("last_name", ""),
-            PhoneNumber="1234567890",
-            Email=user_data["first_name"]
-            + "_"
-            + user_data.get("last_name", "")
-            + "@"
-            + email_domain,
-            LegalName="New Company LLC",
-            RegistrationNumber="123456789",
-            VatNumber="VAT123456",
-            Address="123 New Street",
-            City="New City",
-            Country="New Country",
-            Zip="12345",
-            CurrencyID=default_currency.CurrencyID,
+        # This will raise if company doesn't exist
+        user = create_user_and_link(
+            db, user_data, admin_role.RoleID, company.CompanyDetailsID
         )
-        db.add(new_company)
+
+        # Create the company-user relationship
+        company_user = ensure_company_user_relation(
+            db=db,
+            user_id=user.ClerkID,
+            company_id=company.CompanyDetailsID,
+            default_role_name=admin_role.UserRole,
+        )
+
+        # Commit everything together
         db.commit()
-        db.refresh(new_company)
-        company_id = new_company.CompanyDetailsID
-        logger.debug(f"Created new company with ID: {company_id}")
+        db.refresh(user)
+        db.refresh(company_user)
 
-        role = db.query(RoleDetails).filter(RoleDetails.UserRole == "admin").first()
-        if not role:
-            role = RoleDetails(UserRole="admin")
-            db.add(role)
-            db.commit()
-            db.refresh(role)
+        return user, company_user
 
-        db_user = UserDetails(
-            ClerkID=user_data["id"],
-            UserName=user_data["first_name"] + " " + user_data.get("last_name", ""),
-            Email=user_data["email_addresses"][0]["email_address"],
-            Password="default password",  # Handle password setting as per your requirements
-            RoleID=role.RoleID,
-            CompanyDetailsID=company_id,
-            DefaultCompanyDetailsID=company_id,
-        )
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        logger.info(f"User created: {db_user}")  # Log the created user for debugging
-
-        company_user = CompanyUser(
-            UserID=db_user.ClerkID,
-            CompanyID=company_id,
-            RoleID=role.RoleID,
-        )
-        db.add(company_user)
-        db.commit()
-        logger.info(f"Created CompanyUser link for admin: {company_user}")
-
-        return db_user
     except Exception as e:
         db.rollback()
-        logger.error(f"Error creating user: {e}")
-        raise
+        logger.error(f"User creation failed: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Could not create user: {str(e)}"
+        ) from e
 
 
 async def update_user(db: Session, user_data: dict):
@@ -376,13 +490,36 @@ async def update_user(db: Session, user_data: dict):
 
 async def delete_user(db: Session, user_id: str):
     try:
-        db_user = db.query(UserDetails).filter(UserDetails.ClerkID == user_id).first()
-        if db_user:
-            db.delete(db_user)
+        db_user = (
+            db.query(UserDetails)
+            .options(
+                selectinload(UserDetails.CompanyLinks)
+            )  # ensure CompanyUser links are loaded
+            .filter(UserDetails.ClerkID == user_id)
+            .first()
+        )
+
+        if not db_user:
+            logger.warning(
+                f"User with ClerkID {user_id} not found in database. Skipping delete."
+            )
+            return
+
+        default_company_id = db_user.DefaultCompanyDetailsID
+
+        company = (
+            db.query(CompanyDetailsInfo)
+            .filter(CompanyDetailsInfo.CompanyDetailsID == default_company_id)
+            .first()
+        )
+
+        if company:
+            db.delete(company)
             db.commit()
-            logger.info(
-                f"User deleted: {db_user}"
-            )  # Log the deleted user for debugging
+
+        db.delete(db_user)
+        db.commit()
+        logger.info(f"User deleted: {db_user}")  # Log the deleted user for debugging
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
         raise
@@ -417,6 +554,7 @@ async def get_company_users(
     company_user = ensure_company_user_relation(
         db, user_id=current_user.ClerkID, company_id=company_id
     )
+    db.commit()
     if company_user.RoleID != ADMIN_ROLE_ID:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -546,6 +684,7 @@ async def update_user_role_by_admin(
     company_user = ensure_company_user_relation(
         db, user_id=current_user.ClerkID, company_id=user_data["company_id"]
     )
+    db.commit()
     if company_user.RoleID != ADMIN_ROLE_ID:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -600,6 +739,7 @@ async def update_user_endpoint(
             user_id=db_user.ClerkID,
             company_id=db_user.CompanyDetailsID,
         )
+        db.commit()
 
         sync_clerk_user_metadata(user=db_user, company_user=company_user)
 
@@ -669,6 +809,7 @@ async def upload_csv(
     company_user = ensure_company_user_relation(
         db, user_id=current_user.ClerkID, company_id=company_id
     )
+    db.commit()
     if company_user.RoleID != ADMIN_ROLE_ID:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -714,9 +855,14 @@ async def upload_csv(
                 )
 
             try:
-                DocumentDate = datetime.strptime(row[2], "%d/%m/%Y").date()  # converts '13/05/2024' to datetime.date(2024, 5, 13)
+                DocumentDate = datetime.strptime(
+                    row[2], "%d/%m/%Y"
+                ).date()  # converts '13/05/2024' to datetime.date(2024, 5, 13)
             except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid date format in row {idx}: {row[2]}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid date format in row {idx}: {row[2]}",
+                )
 
             # === Commodity ===
             Commodity = (
@@ -1363,6 +1509,7 @@ def update_company(
     company_user = ensure_company_user_relation(
         db, user_id=current_user.ClerkID, company_id=company_id
     )
+    db.commit()
 
     if company_user.RoleID != ADMIN_ROLE_ID:
         raise HTTPException(status_code=403, detail="Not enough permissions")
@@ -1406,6 +1553,7 @@ async def delete_company(
     company_user = ensure_company_user_relation(
         db, user_id=current_user.ClerkID, company_id=company_id
     )
+    db.commit()
 
     if company_user.RoleID != ADMIN_ROLE_ID:
         raise HTTPException(status_code=403, detail="Not enough permissions")
