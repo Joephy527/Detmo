@@ -70,7 +70,6 @@ export const usersColumn: ColumnDef<UserEditType>[] = [
         ...data,
         Role: data.Role?.includes("admin") ? "admin" : "user",
       };
-      console.log({ user });
       if ((user?.publicMetadata?.role as string).includes("admin"))
         return (
           <div className="flex gap-6 items-center">
