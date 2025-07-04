@@ -252,6 +252,8 @@ export async function updateUserCompany(
       revalidatePath("/dashboard/spend-analysis");
       revalidatePath("/dashboard/settings");
       revalidatePath("/dashboard/projects");
+
+      revalidateTag("company_details");
       return { success: true };
     } else throw new Error(res.statusText);
   } catch (error) {

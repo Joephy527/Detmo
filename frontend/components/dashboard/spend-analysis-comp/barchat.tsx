@@ -23,7 +23,7 @@ const Barchat: FC<props> = ({ spending_by_supplier_promise }) => {
 
   const rangeData = spending_by_supplier.map((data) => {
     return {
-      name: data["Company ID"],
+      name: data["VendorName"],
       amount: data["Total Spend"],
     };
   });

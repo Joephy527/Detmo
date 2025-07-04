@@ -1,13 +1,11 @@
-import { FC, Suspense } from "react";
+import { Suspense } from "react";
 
-import { getUserDetail } from "@/actions/settings";
 import {
-  getSpendingByCommodity,
-  getSpendingByLocation,
-  getSpendingByMonth,
-  getSpendingBySupplier,
+  getSpendingByCommodityFiltered,
+  getSpendingByLocationFiltered,
+  getSpendingByMonthFiltered,
   getSpendingBySupplierfiltered,
-  getSpendingByTopSupplier,
+  getSpendingByTopSupplierFiltered,
   getSpendingHeaderView,
 } from "@/actions/spend-analysis";
 import Barchat from "@/components/dashboard/spend-analysis-comp/barchat";
@@ -51,12 +49,31 @@ const SpendAnalysis = async ({
     startDate,
     endDate,
   });
-  const spending_by_month_promise = getSpendingByMonth();
-  const spending_by_commodity_promise = getSpendingByCommodity();
-  const spending_by_location_promise = getSpendingByLocation();
-  const spending_by_top_supplier_promise = getSpendingByTopSupplier();
+  const spending_by_month_promise = getSpendingByMonthFiltered({
+    startDate,
+    endDate,
+  });
+  const spending_by_commodity_promise = getSpendingByCommodityFiltered({
+    startDate,
+    endDate,
+  });
+  const spending_by_location_promise = getSpendingByLocationFiltered({
+    startDate,
+    endDate,
+  });
+  const spending_by_top_supplier_promise = getSpendingByTopSupplierFiltered({
+    startDate,
+    endDate,
+  });
 
-  if (!header_view) {
+  if (
+    !header_view &&
+    !spending_by_supplier_promise &&
+    !spending_by_month_promise &&
+    !spending_by_commodity_promise &&
+    !spending_by_location_promise &&
+    !spending_by_top_supplier_promise
+  ) {
     return <EmptyStats />;
   }
 
@@ -78,7 +95,10 @@ const SpendAnalysis = async ({
 
       {/* cards */}
       <div className="">
-        <Suspense fallback={<HeaderViewLoading />}>
+        <Suspense
+          fallback={<HeaderViewLoading />}
+          key={`1-${startDate}-${endDate}`}
+        >
           <HeaderView header_view={header_view} />
         </Suspense>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -86,7 +106,10 @@ const SpendAnalysis = async ({
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pl-8 pt-7">
               Spending by supplier
             </h2>
-            <Suspense fallback={<BarchatLoading />}>
+            <Suspense
+              fallback={<BarchatLoading />}
+              key={`2-${startDate}-${endDate}`}
+            >
               <Barchat
                 spending_by_supplier_promise={spending_by_supplier_promise}
               />
@@ -96,7 +119,10 @@ const SpendAnalysis = async ({
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-8">
               Spending by month
             </h2>
-            <Suspense fallback={<LinechatLoading />}>
+            <Suspense
+              fallback={<LinechatLoading />}
+              key={`3-${startDate}-${endDate}`}
+            >
               <Linechat spending_by_month_promise={spending_by_month_promise} />
             </Suspense>
           </div>
@@ -104,7 +130,10 @@ const SpendAnalysis = async ({
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6">
               Spending by commodity
             </h2>
-            <Suspense fallback={<TreeMapLoading />}>
+            <Suspense
+              fallback={<TreeMapLoading />}
+              key={`4-${startDate}-${endDate}`}
+            >
               <TreeMap
                 spending_by_commodity_promise={spending_by_commodity_promise}
               />
@@ -114,7 +143,10 @@ const SpendAnalysis = async ({
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6 mb-4">
               Spending by location
             </h2>
-            <Suspense fallback={<GeoMapLoading />}>
+            <Suspense
+              fallback={<GeoMapLoading />}
+              key={`5-${startDate}-${endDate}`}
+            >
               <GeoMap
                 spending_by_location_promise={spending_by_location_promise}
               />
@@ -124,7 +156,10 @@ const SpendAnalysis = async ({
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-6">
               Top Supplier spend
             </h2>
-            <Suspense fallback={<SupplierNeedsLoading />}>
+            <Suspense
+              fallback={<SupplierNeedsLoading />}
+              key={`6-${startDate}-${endDate}`}
+            >
               <SupplierNeeds
                 spending_by_top_supplier_promise={
                   spending_by_top_supplier_promise

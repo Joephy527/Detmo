@@ -1188,6 +1188,88 @@ def month_spend(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+@app.get("/v1/spending/commodity/direct/{company_id}", tags=["Spending Views"])
+def get_commodity_spend_with_dates(
+    company_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserDetails = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Base CTE for total spend calculation
+    query = """
+    WITH totalspend AS (
+        SELECT 
+            po."CompanyDetailsID",
+            SUM(po."NetPrice" * po."OrderQuantity") AS "TotalSpend"
+        FROM "PurchaseOrder" po
+        WHERE po."CompanyDetailsID" = :company_id
+    """
+    
+    params = {"company_id": company_id}
+    
+    # Add date filters to totalspend CTE if provided
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+    
+    # Continue with commodityspend CTE
+    query += """
+        GROUP BY po."CompanyDetailsID"
+    ),
+    commodityspend AS (
+        SELECT 
+            po."CompanyDetailsID",
+            c."CommodityName",
+            SUM(po."NetPrice" * po."OrderQuantity") AS "CommoditySpend"
+        FROM "PurchaseOrder" po
+        JOIN "Commodity" c ON po."CommodityID"::text = c."CommodityID"::text
+        WHERE po."CompanyDetailsID" = :company_id
+    """
+    
+    # Add same date filters to commodityspend CTE
+    if start_date:
+        query += ' AND po."DocumentDate" >= :start_date'
+    if end_date:
+        query += ' AND po."DocumentDate" <= :end_date'
+    
+    # Final query construction
+    query += """
+        GROUP BY po."CompanyDetailsID", c."CommodityName"
+    )
+    SELECT 
+        cs."CompanyDetailsID",
+        cs."CommodityName",
+        ROUND((cs."CommoditySpend" / ts."TotalSpend" * 100::double precision)::numeric, 2) AS "Percentage of Total Spending",
+        ROUND(cs."CommoditySpend"::numeric, 2) AS "Total Spend"
+    FROM commodityspend cs
+    JOIN totalspend ts ON cs."CompanyDetailsID"::text = ts."CompanyDetailsID"::text
+    ORDER BY cs."CommodityName"
+    """
+
+    try:
+        result = db.execute(text(query), params)
+        data = [dict(row) for row in result.mappings()]
+        return {"commodity_spend": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 # api to get Spending By Commodity
 @app.get("/v1/spending/commodity/{company_id}", tags=["Spending Views"])
@@ -1204,6 +1286,64 @@ def commodity_spend(
     df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"commodity_spend": df}
 
+@app.get("/v1/spending/location/direct/{company_id}", tags=["Spending Views"])
+def get_location_spend_with_dates(
+    company_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserDetails = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Base query matching the view's logic exactly
+    query = """
+    SELECT 
+        po."CompanyDetailsID" AS "Company ID",
+        v."VendorName",
+        v."Country",
+        ROUND(SUM(po."NetPrice" * po."OrderQuantity")::numeric, 2) AS "Total Spend"
+    FROM "PurchaseOrder" po
+    JOIN "Vendor" v ON po."VendorID"::text = v."VendorID"::text
+    WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    # Convert date strings to date objects if provided
+    params = {"company_id": company_id}
+
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+
+    # Complete the query to match the view's GROUP BY
+    query += """
+    GROUP BY 
+        po."CompanyDetailsID", 
+        v."VendorName", 
+        v."Country"
+    """
+
+    try:
+        result = db.execute(text(query), params)
+        data = [dict(row) for row in result.mappings()]
+        return {"location_spend": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 # api to get Spending by Location
 @app.get("/v1/spending/location/{company_id}", tags=["Spending Views"])
@@ -1219,6 +1359,123 @@ def location_spend(
     df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"location_spend": df}
 
+@app.get(
+    "/v1/spending/top_supplier/direct/{company_id}",
+    tags=["Spending Views"],
+    response_model=PaginatedResponse,
+)
+def get_top_supplier_spend_with_dates(
+    company_id: str,
+    skip: int = 0,
+    limit: int = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserDetails = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Validate pagination parameters
+    if skip < 0:
+        raise HTTPException(
+            status_code=400, detail="skip parameter must be greater than or equal to 0"
+        )
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400, detail="limit parameter must be between 1 and 100"
+        )
+
+    # Base query matching the view's logic
+    query = """
+    SELECT 
+        po."CompanyDetailsID" AS "Company ID",
+        c."CommodityName",
+        c."PartNumber" AS "MaterialNumber",
+        v."VendorName",
+        v."Location",
+        ROUND(SUM(po."NetPrice" * po."OrderQuantity")::numeric, 2) AS "TotalSpend"
+    FROM "PurchaseOrder" po
+    JOIN "Commodity" c ON po."CommodityID"::text = c."CommodityID"::text
+    JOIN "Vendor" v ON po."VendorID"::text = v."VendorID"::text
+    WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    params = {"company_id": company_id}
+
+    # Add date filters if provided
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+
+    # Complete the query with GROUP BY and ORDER BY
+    query += """
+    GROUP BY 
+        po."CompanyDetailsID", 
+        c."CommodityName", 
+        c."PartNumber", 
+        v."VendorName", 
+        v."Location"
+    ORDER BY "TotalSpend" DESC
+    LIMIT :limit OFFSET :skip
+    """
+
+    # Total count query (without pagination)
+    total_query = """
+    SELECT COUNT(*) FROM (
+        SELECT 
+            po."CompanyDetailsID"
+        FROM "PurchaseOrder" po
+        JOIN "Commodity" c ON po."CommodityID"::text = c."CommodityID"::text
+        JOIN "Vendor" v ON po."VendorID"::text = v."VendorID"::text
+        WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    # Add same date filters to count query
+    if start_date:
+        total_query += ' AND po."DocumentDate" >= :start_date'
+    if end_date:
+        total_query += ' AND po."DocumentDate" <= :end_date'
+
+    total_query += """
+        GROUP BY 
+            po."CompanyDetailsID", 
+            c."CommodityName", 
+            c."PartNumber", 
+            v."VendorName", 
+            v."Location"
+    ) AS subquery
+    """
+
+    try:
+        # Execute both queries
+        params.update({"limit": limit, "skip": skip})
+        
+        # Get paginated results
+        result = db.execute(text(query), params)
+        items = [dict(row) for row in result.mappings()]
+        
+        # Get total count
+        total_result = db.execute(text(total_query), params)
+        total = total_result.scalar()
+
+        return PaginatedResponse(total=total, items=items)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 # api to get TopSupplierSpend
 @app.get(
@@ -1534,7 +1791,7 @@ pass
 def get_companies(
     company_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_user),
+    current_user: UserDetails = Depends(get_current_user),
 ):
     if company_id:
         db_company = (

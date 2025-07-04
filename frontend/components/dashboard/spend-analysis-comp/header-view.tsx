@@ -3,8 +3,12 @@ import React, { use } from "react";
 import CardHeaders from "./cards-headers";
 import { HeaderViewType } from "@/lib/types";
 
-const HeaderView = ({ header_view }: { header_view: HeaderViewType }) => {
-  return (
+const HeaderView = ({
+  header_view,
+}: {
+  header_view: HeaderViewType | null;
+}) => {
+  return header_view ? (
     <div className="gap-4 grid grid-cols-1 sm:grid-cols-3 sm:col-span-3 xl:grid-cols-5 xl:col-span-5 mb-4">
       <CardHeaders
         description="Total Spend"
@@ -172,6 +176,23 @@ const HeaderView = ({ header_view }: { header_view: HeaderViewType }) => {
         title="PO Count"
         countSymbol="$"
         count={header_view.po_count}
+      />
+    </div>
+  ) : (
+    <div className="grid grid-cols-1 mb-4">
+      <CardHeaders
+        description="Error getting data"
+        Icon={
+          <span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+              <g data-name="8.Alert">
+                <path d="M12 24a12 12 0 1 1 12-12 12.013 12.013 0 0 1-12 12zm0-22a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2z" />
+                <path d="M11 6h2v8h-2zM11 16h2v2h-2z" />
+              </g>
+            </svg>
+          </span>
+        }
+        title="Error getting data. Try reloading page"
       />
     </div>
   );
