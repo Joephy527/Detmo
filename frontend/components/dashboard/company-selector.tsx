@@ -70,7 +70,10 @@ export default function CompanySelector() {
 
   // Fetch all data in a single useEffect
   const fetchData = useCallback(async () => {
-    if (!isUserLoaded) return;
+    if (!isUserLoaded) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -147,7 +150,8 @@ export default function CompanySelector() {
           toast.success("Company updated successfully");
 
           await user?.reload();
-          console.log(user);
+
+          window.location.reload();
 
           // Update local state instead of reloading
           const newActiveCompany = companies.find(

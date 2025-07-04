@@ -6,6 +6,7 @@ import {
   getSpendingByLocation,
   getSpendingByMonth,
   getSpendingBySupplier,
+  getSpendingBySupplierfiltered,
   getSpendingByTopSupplier,
   getSpendingHeaderView,
 } from "@/actions/spend-analysis";
@@ -33,12 +34,23 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import EmptyStats from "./empty-stats";
+import {
+  ParsedSearchParams,
+  searchParamsCache,
+} from "@/components/dashboard/spend-analysis-comp/search-params";
 
-interface SpendAnalysisProps {}
+const SpendAnalysis = async ({
+  searchParams,
+}: {
+  searchParams: ParsedSearchParams;
+}) => {
+  const { startDate, endDate } = await searchParamsCache.parse(searchParams);
 
-const SpendAnalysis: FC<SpendAnalysisProps> = async ({}) => {
   const header_view = await getSpendingHeaderView();
-  const spending_by_supplier_promise = getSpendingBySupplier();
+  const spending_by_supplier_promise = getSpendingBySupplierfiltered({
+    startDate,
+    endDate,
+  });
   const spending_by_month_promise = getSpendingByMonth();
   const spending_by_commodity_promise = getSpendingByCommodity();
   const spending_by_location_promise = getSpendingByLocation();

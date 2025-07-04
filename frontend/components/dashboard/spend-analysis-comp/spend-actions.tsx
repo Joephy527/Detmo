@@ -8,11 +8,9 @@ import DatePickerComponent from "@/components/ui/date-picker";
 import UploadCSVDialog from "./upload-csv-dialog";
 import { downloadCSV } from "@/actions/spend-analysis";
 import { Spinner } from "@chakra-ui/react";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 
-interface SpendActionsProps {}
-
-const SpendActions: FC<SpendActionsProps> = ({}) => {
+const SpendActions = () => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownload = async () => {
@@ -66,15 +64,17 @@ const SpendActions: FC<SpendActionsProps> = ({}) => {
         </div>
         <div className=" flex gap-x-4 justify-center items-center">
           <DatePickerComponent
-            dateValue={new Date()}
-            onDateChange={() => {}}
+            dateValue={subDays(new Date(), 360)}
+            dateName="startDate"
+            // onDateChange={() => {}}
             icon
             style="bg-[#FFFFFF]"
             placeholder={format(new Date(), "dd-mm-yyyy")}
           />
           <DatePickerComponent
             dateValue={new Date()}
-            onDateChange={() => {}}
+            dateName="endDate"
+            // onDateChange={() => {}}
             icon
             style="bg-[#FFFFFF]"
             placeholder={format(new Date(), "dd-mm-yyyy")}

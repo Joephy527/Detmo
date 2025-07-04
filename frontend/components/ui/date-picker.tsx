@@ -12,23 +12,39 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useQueryStates } from "nuqs";
+import {
+  searchParamOption,
+  searchParams,
+} from "../dashboard/spend-analysis-comp/search-params";
 
 export default function DatePickerComponent({
   dateValue,
-  onDateChange,
-  placeholder ='Pick a date',
+  dateName,
+  // onDateChange,
+  placeholder = "Pick a date",
   style,
   icon,
-  dateFormat = 'dd/MM/yyyy',
+  dateFormat = "dd/MM/yyyy",
 }: {
-  dateValue?: Date | undefined;
-  onDateChange: (date: Date | undefined) => void;
-  placeholder?:string;
-  style?:string;
-  icon?:boolean;
-  dateFormat?: string
+  dateValue: Date;
+  dateName: string;
+  // onDateChange: (date: Date | undefined) => void;
+  placeholder?: string;
+  style?: string;
+  icon?: boolean;
+  dateFormat?: string;
 }) {
-  const [date, setDate] = React.useState<Date>();
+  const [, setParams] = useQueryStates(searchParams, searchParamOption);
+
+  const [date, setDate] = React.useState<Date>(dateValue);
+
+  React.useEffect(() => {
+    setParams((prev) => ({
+      ...prev,
+      [dateName]: date ? format(date, "yyyy-MM-dd") : "",
+    }));
+  }, [date, setParams]);
 
   return (
     <Popover>
@@ -38,10 +54,14 @@ export default function DatePickerComponent({
           className={cn(
             " justify-start text-left font-normal bg-[#F6F6F6]",
             !date && "text-muted-foreground",
-            style && style
+            style && style,
           )}
         >
-          <CalendarDays className="size-4 mr-2 mb-1" color="#121212" strokeWidth={1.5}/>
+          <CalendarDays
+            className="size-4 mr-2 mb-1"
+            color="#121212"
+            strokeWidth={1.5}
+          />
           {date ? format(date, dateFormat) : <span>{placeholder}</span>}
           {icon && <ChevronDown className="ml-2 h-4 w-4" />}
         </Button>
@@ -52,13 +72,11 @@ export default function DatePickerComponent({
           selected={date}
           onSelect={(newDate) => {
             setDate(newDate || new Date());
-            onDateChange(newDate);
           }}
           initialFocus
           captionLayout="dropdown-buttons"
           fromYear={1950}
           toYear={2050}
-          
         />
       </PopoverContent>
     </Popover>

@@ -25,12 +25,54 @@ export async function getSpendingHeaderView(): Promise<HeaderViewType | null> {
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 60,
+          revalidate: 0,
         },
+        cache: "no-store",
       },
     );
 
     return data;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export async function getSpendingBySupplierfiltered({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<SpendingBySupplierType[] | null> {
+  try {
+    const token = await auth().getToken();
+    const userData = await getUserDetail();
+    const companyId = userData?.CompanyDetailsID;
+
+    const params = new URLSearchParams();
+
+    /* if (startDate) {
+      params.set("start_date", startDate);
+    }
+    if (endDate) {
+      params.set("end_date", endDate);
+    } */
+
+    const data = await fetcher(
+      `${process.env.API_URL}/spending/supplier/direct/${companyId}${params.toString() ?? ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        next: {
+          revalidate: 0,
+        },
+        cache: "no-store",
+      },
+    );
+
+    return data.supplier_spend;
   } catch (error) {
     console.error(error);
     return null;
@@ -77,8 +119,9 @@ export async function getSpendingByMonth(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 60,
+          revalidate: 0,
         },
+        cache: "no-store",
       },
     );
 
@@ -103,8 +146,9 @@ export async function getSpendingByCommodity(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 60,
+          revalidate: 0,
         },
+        cache: "no-store",
       },
     );
 
@@ -129,8 +173,9 @@ export async function getSpendingByLocation(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 60,
+          revalidate: 0,
         },
+        cache: "no-store",
       },
     );
 
@@ -156,8 +201,9 @@ export async function getSpendingByTopSupplier(): Promise<{
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 60,
+          revalidate: 0,
         },
+        cache: "no-store",
       },
     );
 
@@ -263,4 +309,3 @@ function blobToBase64(blob: Blob) {
     reader.readAsDataURL(blob);
   });
 }
-

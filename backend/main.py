@@ -15,6 +15,7 @@ from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
                                   get_swagger_ui_oauth2_redirect_html)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
+from sqlalchemy import text
 from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
                             SQLAlchemyError)
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
@@ -1064,22 +1065,22 @@ async def download_csv(
 def summary_counts(
     company_id: str, current_user: UserDetails = Depends(get_current_active_user)
 ):
-    query = (
+    query = text(
         """
         SELECT * FROM public.headerview
-        where "Company ID" = \'"""
-        + company_id
-        + """\';
+        WHERE "Company ID" = :company_id
     """
     )
 
     try:
-        df = pd.read_sql(query, engine)
+        df = pd.read_sql(query, engine, params={"company_id": company_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
     if df.empty:
-        raise HTTPException(status_code=404, detail="No data found")
+        raise HTTPException(
+            status_code=404, detail=f"Company with ID {company_id} doesn't have any data at headerview"
+        )
 
     summary = {
         "company_id": str(df["Company ID"].iloc[0]),
@@ -1094,20 +1095,79 @@ def summary_counts(
 
 
 # Spending by supplier view
+
+
+@app.get("/v1/spending/supplier/direct/{company_id}", tags=["Spending Views"])
+def get_supplier_spend_with_dates(
+    company_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserDetails = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Base query
+    query = """
+    SELECT 
+        po."CompanyDetailsID" AS "Company ID",
+        v."VendorName",
+        ROUND(SUM((po."OrderQuantity" * po."NetPrice"))::numeric, 2) AS "Total Spend"
+    FROM "PurchaseOrder" po
+    JOIN "Vendor" v ON (po."VendorID"::text = v."VendorID"::text)
+    WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    # Convert date strings to date objects if provided
+    params = {"company_id": company_id}
+
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+
+    # Complete the query
+    query += ' GROUP BY po."CompanyDetailsID", v."VendorName"'
+
+    try:
+        result = db.execute(text(query), params)
+        data = [dict(row) for row in result.mappings()]
+        return {"supplier_spend": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
 # api to get spending by supplier
 @app.get("/v1/spending/supplier/{company_id}", tags=["Spending Views"])
 def supplier_spend(
     company_id: str, current_user: UserDetails = Depends(get_current_active_user)
 ):
-    query = (
-        """SELECT * FROM public."supplierview"
-    where "Company ID" = \'"""
-        + company_id
-        + """\';
+    query = text(
+        """
+        SELECT * FROM public.supplierview
+        WHERE "Company ID" = :company_id
     """
     )
-    df = pd.read_sql(query, conn).to_dict(orient="records")
-    return {"supplier_spend": df}
+
+    try:
+        df = pd.read_sql(query, engine, params={"company_id": company_id})
+        return {"supplier_spend": df.to_dict(orient="records")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 # api to get spending by month
@@ -1115,15 +1175,18 @@ def supplier_spend(
 def month_spend(
     company_id: str, current_user: UserDetails = Depends(get_current_active_user)
 ):
-    query = (
-        """SELECT * FROM public."monthspend"
-    where "Company ID" = \'"""
-        + company_id
-        + """\';
+    query = text(
+        """
+        SELECT * FROM public.monthspend
+        WHERE "Company ID" = :company_id
     """
     )
-    df = pd.read_sql(query, conn).to_dict(orient="records")
-    return {"month_spend": df}
+
+    try:
+        df = pd.read_sql(query, engine, params={"company_id": company_id})
+        return {"month_spend": df.to_dict(orient="records")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 # api to get Spending By Commodity
@@ -1138,7 +1201,7 @@ def commodity_spend(
         + """\';
     """
     )
-    df = pd.read_sql(query, conn).to_dict(orient="records")
+    df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"commodity_spend": df}
 
 
@@ -1153,7 +1216,7 @@ def location_spend(
         + company_id
         + """\';"""
     )
-    df = pd.read_sql(query, conn).to_dict(orient="records")
+    df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"location_spend": df}
 
 
@@ -1188,8 +1251,8 @@ def top_supplier_spend(
     SELECT COUNT(*) FROM public."topsupplierspend"
     WHERE "Company ID" = '{company_id}';
     """
-    df = pd.read_sql(query, conn)
-    total = pd.read_sql(total_query, conn).iloc[0, 0]
+    df = pd.read_sql(query, engine)
+    total = pd.read_sql(total_query, engine).iloc[0, 0]
 
     return PaginatedResponse(total=total, items=df.to_dict(orient="records"))
 

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Metadata } from "next";
 import { Roboto as FontSans } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import MyApp from "./pages/_app";
 import SetCookies from "@/components/set-cookies";
 const fontSans = FontSans({
@@ -139,7 +140,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             },
           }}
         >
-          {children}
+          <NuqsAdapter>{children}</NuqsAdapter>
           {/* <SetCookies /> */}
         </ClerkProvider>
         <Analytics />
