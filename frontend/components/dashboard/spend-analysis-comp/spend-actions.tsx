@@ -64,7 +64,7 @@ const SpendActions = () => {
         </div>
         <div className=" flex gap-x-4 justify-center items-center">
           <DatePickerComponent
-            dateValue={subDays(new Date(), 360)}
+            dateValue={subDays(new Date(), 1000)}
             dateName="startDate"
             // onDateChange={() => {}}
             icon

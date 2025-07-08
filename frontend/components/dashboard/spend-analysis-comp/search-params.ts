@@ -3,7 +3,7 @@ import { createSearchParamsCache, parseAsString } from "nuqs/server";
 
 export const searchParams = {
   startDate: parseAsString.withDefault(
-    format(subDays(new Date(), 360), "yyyy-MM-dd"),
+    format(subDays(new Date(), 1000), "yyyy-MM-dd"),
   ),
   endDate: parseAsString.withDefault(format(new Date(), "yyyy-MM-dd")),
 };

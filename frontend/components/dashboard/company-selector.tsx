@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Building, ChevronDown, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -60,53 +60,126 @@ export default function CompanySelector() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const { user, isLoaded: isUserLoaded } = useUser();
 
-  // Get user email once when loaded
-  const userEmail = useMemo(() => {
-    return user?.emailAddresses[0]?.emailAddress || "default@gmail.com";
-  }, [user]);
+  const userEmail =
+    user?.emailAddresses[0]?.emailAddress || "default@gmail.com";
 
-  // Fetch all data in a single useEffect
-  const fetchData = useCallback(async () => {
-    if (!isUserLoaded) {
-      setIsLoading(false);
-      return;
-    }
-
+  const fetchCompanyData = useCallback(async () => {
     setIsLoading(true);
+    setFetchError(null);
+
     try {
-      // Fetch data in parallel
-      const [allCompanies, userCompany] = await Promise.all([
-        getCompanyDetails(),
-        getUserCompanyDetails(),
-      ]);
+      const currentUserEmail =
+        user?.emailAddresses[0]?.emailAddress || "default@gmail.com";
 
-      // Set current company
-      if (userCompany) {
-        setCompany(userCompany);
+      // Fetch all companies first
+      const allCompanies = await getCompanyDetails().catch(() => {
+        setFetchError("Failed to load companies list");
+        return null;
+      });
+
+      // Then fetch user's specific company (but don't fail completely if this fails)
+      let userCompany = null;
+      try {
+        userCompany = await getUserCompanyDetails();
+      } catch (error) {
+        setFetchError("Failed to load user company");
+        // Continue with just the matching companies
       }
 
-      // Filter companies by email domain
-      if (allCompanies) {
-        const matchingCompanies = getMatchingCompaniesByEmailDomain(
-          { Email: userEmail },
-          allCompanies,
-        );
-        setCompanies(matchingCompanies);
+      if (allCompanies === null || userCompany === null) {
+        throw new Error();
       }
+
+      const matchingCompanies = getMatchingCompaniesByEmailDomain(
+        { Email: currentUserEmail },
+        allCompanies,
+      );
+
+      setCompanies(matchingCompanies);
+      setCompany(userCompany);
     } catch (error) {
-      console.error("Error fetching company data:", error);
-      toast.error("Failed to load company data");
+      console.error("Fetch error:", error);
+
+      if (!fetchError) {
+        setFetchError("Failed to load company data");
+      }
+      // Auto-retry logic (max 3 times)
+      if (retryCount < 3) {
+        setTimeout(() => setRetryCount((prev) => prev + 1), 2000);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [isUserLoaded, userEmail]);
+  }, [user, retryCount]);
 
   useEffect(() => {
+    if (!isUserLoaded) return;
+    fetchCompanyData();
+  }, [isUserLoaded, fetchCompanyData]);
+
+  /* useEffect(() => {
+    if (!isUserLoaded || !user) {
+      return;
+    }
+
+    const fetchData = async () => {
+      setIsLoading(true);
+
+      try {
+        // Get fresh email each time to avoid stale closures
+        const currentUserEmail =
+          user.emailAddresses[0]?.emailAddress || "default@gmail.com";
+
+        // Sequential fetching for better error tracking
+        const allCompanies = await getCompanyDetails();
+        if (!allCompanies) {
+          throw new Error("Failed to fetch companies list");
+        }
+
+        const userCompany = await getUserCompanyDetails();
+        // User company might be null for new users - that's acceptable
+
+        // Process data
+        const matchingCompanies = getMatchingCompaniesByEmailDomain(
+          { Email: currentUserEmail },
+          allCompanies,
+        );
+
+        // Batch state updates
+        setCompanies(matchingCompanies);
+        if (userCompany) {
+          setCompany(userCompany);
+        } else if (matchingCompanies.length > 0) {
+          // Auto-select first matching company if user has none
+          setCompany(matchingCompanies[0]);
+        }
+      } catch (error) {
+        console.error("Data fetching error:", error);
+        toast.error("Failed to load company data");
+        // Reset to empty state on error
+        setCompanies([]);
+        setCompany(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    // Add a timeout fallback
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        setIsLoading(false);
+      }
+    }, 10000);
+
     fetchData();
-  }, [fetchData]);
+
+    return () => clearTimeout(timeout);
+  }, [isUserLoaded, user]); // Only depend on Clerk states */
 
   // Memoize the create company handler
   const handleCreateCompany = useCallback(async () => {
@@ -123,10 +196,10 @@ export default function CompanySelector() {
       if (newCompany?.data) {
         setIsDialogOpen(false);
         toast.success("Company created successfully");
-        window.location.reload();
+        // window.location.reload();
       } else {
         toast.error("Failed to create company");
-        fetchData();
+        // fetchData();
       }
     } catch (error) {
       console.error("Failed to create company:", error);
@@ -135,7 +208,7 @@ export default function CompanySelector() {
       setIsCreating(false);
       setNewCompanyName("");
     }
-  }, [newCompanyName, userEmail, fetchData]);
+  }, [newCompanyName, userEmail]);
 
   // Memoize the update company handler
   const handleUpdateUserCompany = useCallback(
@@ -151,7 +224,7 @@ export default function CompanySelector() {
 
           await user?.reload();
 
-          window.location.reload();
+          // window.location.reload();
 
           // Update local state instead of reloading
           const newActiveCompany = companies.find(
@@ -161,7 +234,7 @@ export default function CompanySelector() {
             setCompany(newActiveCompany);
           } else {
             // Refetch if we can't find the company locally
-            fetchData();
+            // fetchData();
           }
         } else {
           toast.error("Failed to update company");
@@ -173,7 +246,7 @@ export default function CompanySelector() {
         setIsSwitching(false);
       }
     },
-    [companies, fetchData],
+    [companies],
   );
 
   // Reset dialog state when closed
@@ -183,6 +256,27 @@ export default function CompanySelector() {
       setNewCompanyName("");
     }
   }, []);
+
+  if (fetchError && retryCount >= 3) {
+    return (
+      <div className="px-4 mb-4">
+        <div className="border rounded-md px-3 py-2 text-center">
+          <p className="text-red-500">{fetchError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRetryCount(0);
+              setFetchError(null);
+              fetchCompanyData();
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Show loading state
   if (isLoading) {

@@ -25,7 +25,7 @@ export async function getSpendingHeaderView(): Promise<HeaderViewType | null> {
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
@@ -52,21 +52,21 @@ export async function getSpendingBySupplierfiltered({
 
     const params = new URLSearchParams();
 
-    /* if (startDate) {
+    if (startDate) {
       params.set("start_date", startDate);
     }
     if (endDate) {
       params.set("end_date", endDate);
-    } */
+    }
 
     const data = await fetcher(
-      `${process.env.API_URL}/spending/supplier/direct/${companyId}${params.toString() ?? ""}`,
+      `${process.env.API_URL}/spending/supplier/direct/${companyId}${params.toString() ? `?${params.toString()}` : ""}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
@@ -105,6 +105,47 @@ export async function getSpendingBySupplier(): Promise<
   }
 }
 
+export async function getSpendingByMonthFiltered({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<SpendingByMonthType[] | null> {
+  try {
+    const token = await auth().getToken();
+    const userData = await getUserDetail();
+    const companyId = userData?.CompanyDetailsID;
+
+    const params = new URLSearchParams();
+
+    if (startDate) {
+      params.set("start_date", startDate);
+    }
+    if (endDate) {
+      params.set("end_date", endDate);
+    }
+
+    const data = await fetcher(
+      `${process.env.API_URL}/spending/month/direct/${companyId}${params.toString() ? `?${params.toString()}` : ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        next: {
+          tags: ["company_details"],
+        },
+        cache: "no-store",
+      },
+    );
+
+    return data.month_spend;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
 export async function getSpendingByMonth(): Promise<
   SpendingByMonthType[] | null
 > {
@@ -119,13 +160,54 @@ export async function getSpendingByMonth(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
     );
 
     return data.month_spend;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export async function getSpendingByCommodityFiltered({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<SpendingByCommodityType[] | null> {
+  try {
+    const token = await auth().getToken();
+    const userData = await getUserDetail();
+    const companyId = userData?.CompanyDetailsID;
+
+    const params = new URLSearchParams();
+
+    if (startDate) {
+      params.set("start_date", startDate);
+    }
+    if (endDate) {
+      params.set("end_date", endDate);
+    }
+
+    const data = await fetcher(
+      `${process.env.API_URL}/spending/commodity/direct/${companyId}${params.toString() ? `?${params.toString()}` : ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        next: {
+          tags: ["company_details"],
+        },
+        cache: "no-store",
+      },
+    );
+
+    return data.commodity_spend;
   } catch (error) {
     console.error(error);
     return null;
@@ -146,13 +228,54 @@ export async function getSpendingByCommodity(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
     );
 
     return data.commodity_spend;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export async function getSpendingByLocationFiltered({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<SpendingByLocationType[] | null> {
+  try {
+    const token = await auth().getToken();
+    const userData = await getUserDetail();
+    const companyId = userData?.CompanyDetailsID;
+
+    const params = new URLSearchParams();
+
+    if (startDate) {
+      params.set("start_date", startDate);
+    }
+    if (endDate) {
+      params.set("end_date", endDate);
+    }
+
+    const data = await fetcher(
+      `${process.env.API_URL}/spending/location/direct/${companyId}${params.toString() ? `?${params.toString()}` : ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        next: {
+          tags: ["company_details"],
+        },
+        cache: "no-store",
+      },
+    );
+
+    return data.location_spend;
   } catch (error) {
     console.error(error);
     return null;
@@ -173,13 +296,57 @@ export async function getSpendingByLocation(): Promise<
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
     );
 
     return data.location_spend;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+export async function getSpendingByTopSupplierFiltered({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{
+  items: SpendingByTopSupplierType[];
+  total: number;
+} | null> {
+  try {
+    const token = await auth().getToken();
+    const userData = await getUserDetail();
+    const companyId = userData?.CompanyDetailsID;
+
+    const params = new URLSearchParams();
+
+    if (startDate) {
+      params.set("start_date", startDate);
+    }
+    if (endDate) {
+      params.set("end_date", endDate);
+    }
+
+    const data = await fetcher(
+      `${process.env.API_URL}/spending/top_supplier/direct/${companyId}${params.toString() ? `?${params.toString()}` : ""}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        next: {
+          tags: ["company_details"],
+        },
+        cache: "no-store",
+      },
+    );
+
+    return data;
   } catch (error) {
     console.error(error);
     return null;
@@ -201,7 +368,7 @@ export async function getSpendingByTopSupplier(): Promise<{
           Authorization: `Bearer ${token}`,
         },
         next: {
-          revalidate: 0,
+          tags: ["company_details"],
         },
         cache: "no-store",
       },
