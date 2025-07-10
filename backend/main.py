@@ -1169,6 +1169,71 @@ def supplier_spend(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+@app.get("/v1/spending/month/direct/{company_id}", tags=["Spending Views"])
+def get_month_spend_with_dates(
+    company_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserDetails = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Base query matching the view's logic exactly
+    query = """
+    SELECT 
+        po."CompanyDetailsID" AS "Company ID",
+        to_char(po."DocumentDate"::timestamp with time zone, 'Month YYYY') AS "Month Year",
+        ROUND(SUM(po."NetPrice" * po."OrderQuantity")::numeric, 2) AS "Total Spend",
+        date_trunc('month', po."DocumentDate"::timestamp with time zone) AS month_date
+    FROM "PurchaseOrder" po
+    WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    # Convert date strings to date objects if provided
+    params = {"company_id": company_id}
+
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+
+    # Complete the query to match the view's GROUP BY and ORDER BY
+    query += """
+    GROUP BY 
+        po."CompanyDetailsID", 
+        to_char(po."DocumentDate"::timestamp with time zone, 'Month YYYY'),
+        date_trunc('month', po."DocumentDate"::timestamp with time zone)
+    ORDER BY 
+        po."CompanyDetailsID", 
+        date_trunc('month', po."DocumentDate"::timestamp with time zone)
+    """
+
+    try:
+        result = db.execute(text(query), params)
+        # Convert to list of dicts and remove the technical month_date field
+        data = [{"Company ID": row["Company ID"], 
+                "Month Year": row["Month Year"], 
+                "Total Spend": row["Total Spend"]} 
+               for row in result.mappings()]
+        return {"month_spend": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 
 # api to get spending by month
 @app.get("/v1/spending/month/{company_id}", tags=["Spending Views"])

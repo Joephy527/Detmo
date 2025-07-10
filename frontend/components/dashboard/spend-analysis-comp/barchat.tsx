@@ -19,8 +19,6 @@ const Barchat: FC<props> = ({ spending_by_supplier_promise }) => {
 
   if (!spending_by_supplier) return;
 
-  console.log({ spending_by_supplier });
-
   const rangeData = spending_by_supplier.map((data) => {
     return {
       name: data["VendorName"],
