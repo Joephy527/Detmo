@@ -195,7 +195,10 @@ export function getCountryCode(countryName: string) {
 
   // Check for exact match (case insensitive)
   for (const [name, code] of Object.entries(countryNameToISOMap)) {
-    if (name.toLowerCase() === normalizedName) {
+    if (
+      name.toLowerCase() === normalizedName ||
+      code.toLowerCase() === normalizedName
+    ) {
       return code;
     }
   }
@@ -204,7 +207,9 @@ export function getCountryCode(countryName: string) {
   for (const [name, code] of Object.entries(countryNameToISOMap)) {
     if (
       name.toLowerCase().includes(normalizedName) ||
-      normalizedName.includes(name.toLowerCase())
+      normalizedName.includes(name.toLowerCase()) ||
+      normalizedName.includes(code.toLowerCase()) ||
+      code.toLowerCase().includes(normalizedName)
     ) {
       return code;
     }
