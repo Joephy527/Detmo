@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, EmailStr, Field
@@ -19,6 +19,7 @@ class UserWithRoleResponse(BaseModel):
     Email: str
     Role: str
     RoleID: str
+    Subscription: Optional[dict]
 
 
 class UserListResponse(BaseModel):
@@ -329,3 +330,41 @@ class PaymentVerification(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
+
+
+class SubscriptionCreate(BaseModel):
+    beneficiary_id: str  # Who the subscription is for (can be same as payer)
+    amount: float = 3199.00  # Fixed monthly amount
+    currency: str = "INR"
+
+
+class SubscriptionResponse(BaseModel):
+    SubscriptionID: str
+    PayerID: str
+    BeneficiaryID: str
+    RazorpaySubscriptionID: str
+    Status: str
+    StartDate: Optional[datetime]
+    EndDate: Optional[datetime]
+    NextBillingDate: Optional[datetime]
+    CreatedAt: datetime
+    UpdatedAt: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class PaymentResponse(BaseModel):
+    PaymentID: str
+    SubscriptionID: str
+    RazorpayPaymentID: str
+    Amount: float
+    Currency: str
+    Status: str
+    Method: Optional[str]
+    InvoiceID: Optional[str]
+    Description: Optional[str]
+    CreatedAt: datetime
+
+    class Config:
+        orm_mode = True

@@ -153,7 +153,7 @@ export async function deleteCompanyDetails(
 }
 
 export async function getCompanyUsers(): Promise<{
-  items: UserType[];
+  items: UserEditType[];
   total?: number;
 } | null> {
   try {

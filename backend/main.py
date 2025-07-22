@@ -1,26 +1,30 @@
 import csv
+import hashlib
+import hmac
 import logging
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from io import StringIO
 from typing import List, Optional
 
 import pandas as pd
 import razorpay
 from clerk import *
-from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Request,
-                     UploadFile)
+from dotenv import load_dotenv
+from fastapi import (APIRouter, BackgroundTasks, Depends, FastAPI, File,
+                     HTTPException, Request, UploadFile)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
                                   get_swagger_ui_oauth2_redirect_html)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
                             SQLAlchemyError)
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
-from tenacity import (retry, retry_if_exception_type, stop_after_attempt,
-                      wait_exponential, wait_fixed)
+from tenacity import (before_sleep_log, retry, retry_if_exception_type,
+                      stop_after_attempt, wait_exponential, wait_fixed)
 
 from clerk_client import clerk_client
 from database import *
@@ -29,6 +33,8 @@ from razor import razorpay_client
 from rbac import (ADMIN_ROLE_ID, get_current_active_admin,
                   get_current_active_user, get_current_user)
 from schema import *
+
+load_dotenv()
 
 app = FastAPI(
     title="DETMO API",
@@ -151,6 +157,18 @@ def get_default_role(db: Session):
         db.refresh(role)
     return role
 
+
+# Configure tenacity logger
+tenacity_logger = logging.getLogger("tenacity")
+tenacity_logger.setLevel(logging.WARNING)
+
+# Retry configuration
+RETRY_CONFIG = {
+    "stop": stop_after_attempt(3),
+    "wait": wait_exponential(multiplier=1, min=4, max=10),  # 4s, 8s, 10s
+    "before_sleep": before_sleep_log(tenacity_logger, logging.WARNING),
+    "reraise": True,
+}
 
 # Retry settings: 3 attempts, wait 1 second between attempts
 RETRY_KWARGS = dict(
@@ -562,7 +580,9 @@ async def get_company_users(
     company_users = (
         db.query(CompanyUser)
         .options(
-            joinedload(CompanyUser.User),
+            joinedload(CompanyUser.User)
+            .joinedload(UserDetails.SubscriptionsReceived)
+            .joinedload(PaymentSubscription.Payer),
             joinedload(CompanyUser.Role),
         )
         .filter(CompanyUser.CompanyID == company_id)
@@ -580,11 +600,44 @@ async def get_company_users(
                 "Email": cu.User.Email,
                 "Role": cu.Role.UserRole,
                 "RoleID": cu.RoleID,
+                "Subscription": get_full_subscription_details(cu.User.SubscriptionsReceived)
             }
             for cu in company_users
         ]
     }
 
+def get_full_subscription_details(subscriptions: list) -> Optional[dict] | str:
+    """Returns complete subscription details with payer info"""
+    if not subscriptions:
+        return None
+    
+    sub = subscriptions[0]
+    if sub.Status not in ["pending", "active"]:
+        return None
+        
+    return {
+        # Subscription IDs
+        "system_subscription_id": sub.SubscriptionID,
+        "razorpay_subscription_id": sub.RazorpaySubscriptionID,
+        
+        # Status and dates
+        "status": sub.Status,
+        "start_date": sub.StartDate.isoformat() if sub.StartDate else None,
+        "end_date": sub.EndDate.isoformat() if sub.EndDate else None,
+        "next_billing_date": sub.NextBillingDate.isoformat() if sub.NextBillingDate else None,
+        
+        # Full payer details
+        "payer": get_payer_details(sub.Payer) if sub.Payer else None
+    }
+
+def get_payer_details(payer: UserDetails) -> dict:
+    """Returns complete payer information"""
+    return {
+        "clerk_id": payer.ClerkID,
+        "name": payer.UserName,
+        "email": payer.Email,
+        "company_id": payer.CompanyDetailsID,
+    }
 
 @app.get("/v1/users", response_model=PaginatedResponse[UserResponse], tags=["Users"])
 async def get_users(
@@ -593,7 +646,7 @@ async def get_users(
     skip: int = 0,
     limit: int = 10,
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_user),
+    current_user: UserDetails = Depends(get_current_user),
 ):
     if skip < 0:
         raise HTTPException(
@@ -1079,7 +1132,8 @@ def summary_counts(
 
     if df.empty:
         raise HTTPException(
-            status_code=404, detail=f"Company with ID {company_id} doesn't have any data at headerview"
+            status_code=404,
+            detail=f"Company with ID {company_id} doesn't have any data at headerview",
         )
 
     summary = {
@@ -1169,6 +1223,7 @@ def supplier_spend(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
 @app.get("/v1/spending/month/direct/{company_id}", tags=["Spending Views"])
 def get_month_spend_with_dates(
     company_id: str,
@@ -1225,10 +1280,14 @@ def get_month_spend_with_dates(
     try:
         result = db.execute(text(query), params)
         # Convert to list of dicts and remove the technical month_date field
-        data = [{"Company ID": row["Company ID"], 
-                "Month Year": row["Month Year"], 
-                "Total Spend": row["Total Spend"]} 
-               for row in result.mappings()]
+        data = [
+            {
+                "Company ID": row["Company ID"],
+                "Month Year": row["Month Year"],
+                "Total Spend": row["Total Spend"],
+            }
+            for row in result.mappings()
+        ]
         return {"month_spend": data}
 
     except Exception as e:
@@ -1253,6 +1312,7 @@ def month_spend(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
 @app.get("/v1/spending/commodity/direct/{company_id}", tags=["Spending Views"])
 def get_commodity_spend_with_dates(
     company_id: str,
@@ -1270,9 +1330,9 @@ def get_commodity_spend_with_dates(
         FROM "PurchaseOrder" po
         WHERE po."CompanyDetailsID" = :company_id
     """
-    
+
     params = {"company_id": company_id}
-    
+
     # Add date filters to totalspend CTE if provided
     if start_date:
         try:
@@ -1293,7 +1353,7 @@ def get_commodity_spend_with_dates(
             raise HTTPException(
                 status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
             )
-    
+
     # Continue with commodityspend CTE
     query += """
         GROUP BY po."CompanyDetailsID"
@@ -1307,13 +1367,13 @@ def get_commodity_spend_with_dates(
         JOIN "Commodity" c ON po."CommodityID"::text = c."CommodityID"::text
         WHERE po."CompanyDetailsID" = :company_id
     """
-    
+
     # Add same date filters to commodityspend CTE
     if start_date:
         query += ' AND po."DocumentDate" >= :start_date'
     if end_date:
         query += ' AND po."DocumentDate" <= :end_date'
-    
+
     # Final query construction
     query += """
         GROUP BY po."CompanyDetailsID", c."CommodityName"
@@ -1336,6 +1396,7 @@ def get_commodity_spend_with_dates(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
 # api to get Spending By Commodity
 @app.get("/v1/spending/commodity/{company_id}", tags=["Spending Views"])
 def commodity_spend(
@@ -1350,6 +1411,7 @@ def commodity_spend(
     )
     df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"commodity_spend": df}
+
 
 @app.get("/v1/spending/location/direct/{company_id}", tags=["Spending Views"])
 def get_location_spend_with_dates(
@@ -1410,6 +1472,7 @@ def get_location_spend_with_dates(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
 # api to get Spending by Location
 @app.get("/v1/spending/location/{company_id}", tags=["Spending Views"])
 def location_spend(
@@ -1423,6 +1486,7 @@ def location_spend(
     )
     df = pd.read_sql(query, engine).to_dict(orient="records")
     return {"location_spend": df}
+
 
 @app.get(
     "/v1/spending/top_supplier/direct/{company_id}",
@@ -1528,11 +1592,11 @@ def get_top_supplier_spend_with_dates(
     try:
         # Execute both queries
         params.update({"limit": limit, "skip": skip})
-        
+
         # Get paginated results
         result = db.execute(text(query), params)
         items = [dict(row) for row in result.mappings()]
-        
+
         # Get total count
         total_result = db.execute(text(total_query), params)
         total = total_result.scalar()
@@ -1541,6 +1605,7 @@ def get_top_supplier_spend_with_dates(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 
 # api to get TopSupplierSpend
 @app.get(
@@ -2454,3 +2519,358 @@ def verify_payment(
         raise HTTPException(status_code=400, detail="Payment verification failed")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Fixed subscription details
+MONTHLY_SUBSCRIPTION_AMOUNT = 3199.00  # ₹3199 per month
+SUBSCRIPTION_CURRENCY = "INR"
+SUBSCRIPTION_DESCRIPTION = "Detmo Monthly Subscription"
+
+
+@app.post("/v1/payments/subscribe", tags=["Payments"])
+async def create_subscription(
+    subscription: SubscriptionCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDetails = Depends(get_current_user),
+):
+    """
+    Create a monthly subscription where:
+    - current_user is the payer
+    - beneficiary_id is who gets the subscription benefits
+    """
+
+    # Authorization check
+    company_user = ensure_company_user_relation(
+        db, user_id=current_user.ClerkID, company_id=current_user.CompanyDetailsID
+    )
+    db.commit()
+    if company_user.RoleID != ADMIN_ROLE_ID:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    try:
+        # Verify beneficiary exists
+        beneficiary = (
+            db.query(UserDetails)
+            .filter(UserDetails.ClerkID == subscription.beneficiary_id)
+            .first()
+        )
+        if not beneficiary:
+            raise HTTPException(status_code=404, detail="Beneficiary user not found")
+
+        # Check if beneficiary already has an active subscription
+        existing_sub = (
+            db.query(PaymentSubscription)
+            .filter(
+                PaymentSubscription.BeneficiaryID == subscription.beneficiary_id,
+                PaymentSubscription.Status.in_(["active", "pending"]),
+            )
+            .first()
+        )
+        if existing_sub:
+            raise HTTPException(
+                status_code=400, detail="Beneficiary already has an active subscription"
+            )
+
+        # Create customer in Razorpay for payer
+        razorpay_customer_id = None
+        if current_user.Email:
+            try:
+                customers = razorpay_client.customer.all({"email": current_user.Email})
+                if customers["count"] > 0:
+                    razorpay_customer_id = customers["items"][0]["id"]
+                else:
+                    customer = razorpay_client.customer.create(
+                        {
+                            "name": current_user.UserName or "Customer",
+                            "email": current_user.Email,
+                            "notes": {"clerk_id": current_user.ClerkID},
+                        }
+                    )
+                    razorpay_customer_id = customer["id"]
+            except Exception as e:
+                logger.error(f"Error creating Razorpay customer: {str(e)}")
+
+        plan_id = os.getenv("SUBSCRIPTION_PLAN_ID", "")
+        # Create subscription in Razorpay
+        razorpay_subscription = razorpay_client.subscription.create(
+            {
+                "plan_id": plan_id if plan_id != "" else "plan_QuVYrS2WgFKSL7",
+                "customer_notify": 1,
+                "total_count": 100,
+                "start_at": int(
+                    (datetime.utcnow() + timedelta(days=1)).timestamp()
+                ),
+                "customer_id": razorpay_customer_id,
+                "notes": {
+                    "payer_id": current_user.ClerkID,
+                    "beneficiary_id": subscription.beneficiary_id,
+                },
+            }
+        )
+
+        # Save to database
+        db_subscription = PaymentSubscription(
+            PayerID=current_user.ClerkID,
+            BeneficiaryID=subscription.beneficiary_id,
+            RazorpaySubscriptionID=razorpay_subscription["id"],
+            RazorpayCustomerID=razorpay_customer_id,
+            Status=razorpay_subscription["status"],
+            StartDate=datetime.fromtimestamp(razorpay_subscription["start_at"]),
+            EndDate=datetime.fromtimestamp(razorpay_subscription["end_at"]),
+            CreatedAt=datetime.utcnow(),
+        )
+        db.add(db_subscription)
+        db.commit()
+        db.refresh(db_subscription)
+
+        # Return the subscription details and payment link
+        return {
+            "subscription": db_subscription,
+            "payment_page_url": razorpay_subscription.get("short_url"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def update_beneficiary_status(db: Session, beneficiary_id: str, is_paid: bool):
+    """Helper function to update beneficiary status and sync with Clerk"""
+    beneficiary = (
+        db.query(UserDetails).filter(UserDetails.ClerkID == beneficiary_id).first()
+    )
+    if beneficiary:
+        beneficiary.IsPaid = is_paid
+        company_user = ensure_company_user_relation(
+            db=db, user_id=beneficiary.ClerkID, company_id=beneficiary.CompanyDetailsID
+        )
+        sync_clerk_user_metadata(user=beneficiary, company_user=company_user)
+
+
+@app.post("/v1/payments/webhook", tags=["Payments"])
+async def handle_payment_webhook(
+    request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
+    try:
+        # Verify the webhook signature
+        webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+        if not webhook_secret:
+            logger.error("Webhook secret missing from environment")
+            raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+        received_signature = request.headers.get("X-Razorpay-Signature")
+        if not received_signature:
+            logger.warning("Missing signature header in webhook")
+            raise HTTPException(status_code=400, detail="Missing signature header")
+
+        body = await request.body()
+        expected_signature = hmac.new(
+            webhook_secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(received_signature, expected_signature):
+            logger.warning(f"Invalid signature received: {received_signature}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        payload = await request.json()
+        event = payload.get("event")
+        if not event:
+            logger.warning("Webhook missing event type")
+            raise HTTPException(status_code=400, detail="Missing event type")
+
+        logger.info(f"Received {event} webhook")
+
+        # --- ASYNC PROCESSING ---
+        # Pass the raw request body to background task
+        background_tasks.add_task(
+            process_webhook_background,
+            body=body,  # Pass the raw body for security re-check
+            event_type=event,
+            payload=payload,
+            signature=received_signature,
+        )
+
+        return {"status": "accepted"}
+
+    except Exception as e:
+        logger.error(f"Error processing payment webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Background task with proper DB session handling
+@retry(**RETRY_CONFIG)
+async def process_webhook_background(
+    body: bytes, event_type: str, payload: dict, signature: str
+):
+    """Background task with fresh database session"""
+    # Get fresh database session
+    db = next(get_db())
+
+    try:
+        # 1. Re-verify signature in background task
+        webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+        if not webhook_secret:
+            raise ValueError("Webhook secret not configured")
+
+        # Generate expected signature
+        expected_signature = hmac.new(
+            webhook_secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+
+        # SECURITY CRITICAL: Actual comparison
+        if not hmac.compare_digest(signature, expected_signature):
+            raise ValueError("Invalid webhook signature")
+
+        # Process the event
+        if "subscription" in payload.get("payload", {}):
+            await handle_subscription_event(db, payload, event_type)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Background processing failed: {str(e)}", exc_info=True)
+        raise
+    finally:
+        db.close()
+
+
+async def handle_subscription_event(db: Session, payload: dict, event: str):
+    """Handle subscription events with proper transaction management"""
+    subscription_id = payload["payload"]["subscription"]["entity"]["id"]
+    subscription = (
+        db.query(PaymentSubscription)
+        .filter(PaymentSubscription.RazorpaySubscriptionID == subscription_id)
+        .first()
+    )
+
+    if not subscription:
+        logger.error(f"Subscription not found: {subscription_id}")
+        return
+
+    subscription_data = payload["payload"]["subscription"]["entity"]
+    logger.info(f"Processing {event} for subscription {subscription_id}")
+
+    if event == "subscription.activated":
+        subscription.Status = "active"
+        subscription.StartDate = datetime.fromtimestamp(subscription_data["start_at"])
+        subscription.EndDate = datetime.fromtimestamp(subscription_data["end_at"])
+    elif event == "subscription.pending":
+        subscription.Status = "active"
+    elif event in [
+        "subscription.cancelled",
+        "subscription.completed",
+        "subscription.halted",
+    ]:
+        beneficiary_id = subscription.BeneficiaryID
+        db.delete(subscription)
+        logger.info(f"Deleted {event} subscription {subscription_id}")
+        await update_beneficiary_status(db, beneficiary_id, False)
+
+    elif event == "subscription.charged":
+        await handle_subscription_payment(db, payload, subscription)
+
+
+async def handle_subscription_payment(
+    db: Session, payload: dict, subscription: PaymentSubscription
+):
+    """Record payment and update subscription"""
+    payment_data = payload["payload"]["payment"]["entity"]
+
+    db_payment = PaymentDetails(
+        SubscriptionID=subscription.SubscriptionID,
+        RazorpayPaymentID=payment_data["id"],
+        Amount=payment_data["amount"] / 100,
+        Currency=payment_data["currency"],
+        Status=payment_data["status"],
+        Method=payment_data["method"],
+        InvoiceID=payment_data.get("invoice_id"),
+        Description=SUBSCRIPTION_DESCRIPTION,
+        CreatedAt=datetime.fromtimestamp(payment_data["created_at"]),
+    )
+    db.add(db_payment)
+
+    if "charge_at" in payload["payload"]["subscription"]["entity"]:
+        subscription.NextBillingDate = datetime.fromtimestamp(
+            payload["payload"]["subscription"]["entity"]["charge_at"]
+        )
+
+    logger.info(
+        f"Recorded payment {payment_data['id']} for {subscription.RazorpaySubscriptionID}"
+    )
+    await update_beneficiary_status(db, subscription.BeneficiaryID, True)
+
+
+@app.get(
+    "/v1/payments/subscriptions/me",
+    response_model=List[SubscriptionResponse],
+    tags=["Payments"],
+)
+async def get_my_subscriptions(
+    db: Session = Depends(get_db),
+    current_user: UserDetails = Depends(get_current_user),
+):
+    """Get subscriptions where current user is either payer or beneficiary"""
+    subscriptions = (
+        db.query(PaymentSubscription)
+        .filter(
+            or_(
+                PaymentSubscription.PayerID == current_user.ClerkID,
+                PaymentSubscription.BeneficiaryID == current_user.ClerkID,
+            )
+        )
+        .order_by(PaymentSubscription.CreatedAt.desc())
+        .all()
+    )
+
+    return subscriptions
+
+
+@app.post("/v1/payments/subscriptions/{subscription_id}/cancel", tags=["Payments"])
+async def cancel_subscription(
+    subscription_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserDetails = Depends(get_current_user),
+):
+    """Only the payer can cancel a subscription"""
+    subscription = (
+        db.query(PaymentSubscription)
+        .filter(
+            PaymentSubscription.SubscriptionID == subscription_id,
+            PaymentSubscription.PayerID
+            == current_user.ClerkID,  # Only payer can cancel
+        )
+        .first()
+    )
+
+    if not subscription:
+        raise HTTPException(
+            status_code=404, detail="Subscription not found or not authorized to cancel"
+        )
+
+    if subscription.Status in ["cancelled", "expired"]:
+        raise HTTPException(status_code=400, detail="Subscription already cancelled")
+
+    # Cancel in Razorpay
+    try:
+        razorpay_client.subscription.cancel(subscription.RazorpaySubscriptionID)
+        subscription.Status = "cancelled"
+
+        # Update beneficiary's paid status
+        beneficiary = (
+            db.query(UserDetails)
+            .filter(UserDetails.ClerkID == subscription.BeneficiaryID)
+            .first()
+        )
+        if beneficiary:
+            beneficiary.IsPaid = False
+            company_user = ensure_company_user_relation(
+                db=db,
+                user_id=beneficiary.ClerkID,
+                company_id=beneficiary.CompanyDetailsID,
+            )
+            sync_clerk_user_metadata(user=beneficiary, company_user=company_user)
+
+        db.delete(subscription)
+        db.commit()
+
+        return {"status": "success", "message": "Subscription cancelled"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -61,7 +61,6 @@ export default function CompanySelector() {
   const [isCreating, setIsCreating] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
   const { user, isLoaded: isUserLoaded } = useUser();
 
@@ -82,17 +81,23 @@ export default function CompanySelector() {
         return null;
       });
 
+      if (!allCompanies) {
+        setFetchError("companies list is null");
+        return;
+      }
+
       // Then fetch user's specific company (but don't fail completely if this fails)
       let userCompany = null;
       try {
         userCompany = await getUserCompanyDetails();
       } catch (error) {
-        setFetchError("Failed to load user company");
-        // Continue with just the matching companies
+        setFetchError("Failed to load user company data");
+        return;
       }
 
-      if (allCompanies === null || userCompany === null) {
-        throw new Error();
+      if (userCompany === null) {
+        setFetchError("User company data is null");
+        return;
       }
 
       const matchingCompanies = getMatchingCompaniesByEmailDomain(
@@ -105,81 +110,28 @@ export default function CompanySelector() {
     } catch (error) {
       console.error("Fetch error:", error);
 
-      if (!fetchError) {
-        setFetchError("Failed to load company data");
-      }
-      // Auto-retry logic (max 3 times)
-      if (retryCount < 3) {
-        setTimeout(() => setRetryCount((prev) => prev + 1), 2000);
-      }
+      setFetchError("Failed to load company data");
     } finally {
       setIsLoading(false);
     }
-  }, [user, retryCount]);
+  }, [user]);
 
   useEffect(() => {
-    if (!isUserLoaded) return;
-    fetchCompanyData();
+    if (isUserLoaded) {
+      fetchCompanyData();
+    }
   }, [isUserLoaded, fetchCompanyData]);
 
-  /* useEffect(() => {
-    if (!isUserLoaded || !user) {
-      return;
-    }
-
-    const fetchData = async () => {
-      setIsLoading(true);
-
-      try {
-        // Get fresh email each time to avoid stale closures
-        const currentUserEmail =
-          user.emailAddresses[0]?.emailAddress || "default@gmail.com";
-
-        // Sequential fetching for better error tracking
-        const allCompanies = await getCompanyDetails();
-        if (!allCompanies) {
-          throw new Error("Failed to fetch companies list");
-        }
-
-        const userCompany = await getUserCompanyDetails();
-        // User company might be null for new users - that's acceptable
-
-        // Process data
-        const matchingCompanies = getMatchingCompaniesByEmailDomain(
-          { Email: currentUserEmail },
-          allCompanies,
-        );
-
-        // Batch state updates
-        setCompanies(matchingCompanies);
-        if (userCompany) {
-          setCompany(userCompany);
-        } else if (matchingCompanies.length > 0) {
-          // Auto-select first matching company if user has none
-          setCompany(matchingCompanies[0]);
-        }
-      } catch (error) {
-        console.error("Data fetching error:", error);
-        toast.error("Failed to load company data");
-        // Reset to empty state on error
-        setCompanies([]);
-        setCompany(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // Add a timeout fallback
-    const timeout = setTimeout(() => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
       if (isLoading) {
         setIsLoading(false);
+        setFetchError("Request timed out");
       }
-    }, 10000);
+    }, 10000); // 10 second timeout
 
-    fetchData();
-
-    return () => clearTimeout(timeout);
-  }, [isUserLoaded, user]); // Only depend on Clerk states */
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   // Memoize the create company handler
   const handleCreateCompany = useCallback(async () => {
@@ -257,16 +209,15 @@ export default function CompanySelector() {
     }
   }, []);
 
-  if (fetchError && retryCount >= 3) {
+  if (fetchError) {
     return (
       <div className="px-4 mb-4">
         <div className="border rounded-md px-3 py-2 text-center">
-          <p className="text-red-500">{fetchError}</p>
+          <p className="text-red-500 text-xs">{fetchError}</p>
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              setRetryCount(0);
               setFetchError(null);
               fetchCompanyData();
             }}

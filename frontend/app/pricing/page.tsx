@@ -1,15 +1,15 @@
-'use client'
+"use client";
 
-import { Header } from './components/Header'
-import { Pricing } from './components/Pricing'
-import { Features } from './components/Features'
+import { Header } from "./components/Header";
+import { Pricing } from "./components/PricingSub";
+import { Features } from "./components/Features";
 
 export default function Home() {
-	return (
-		<div>
-			<Header />
-			<Pricing />
-			<Features />
-		</div>
-	)
+  return (
+    <div>
+      <Header />
+      <Pricing />
+      <Features />
+    </div>
+  );
 }

@@ -14,7 +14,17 @@ DB_URL = os.getenv("DB_URL", "")
 # Connect to the Postgres database
 conn = psycopg2.connect(DB_URL)
 
-engine = create_engine(DB_URL, echo=True, pool_recycle=1800)
+engine = create_engine(
+    DB_URL,
+    echo=True,
+    pool_recycle=1800,
+    connect_args={
+        "connect_timeout": 5,  # 5 second timeout
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+    },
+)
 # engine2 = create_engine(DB_URL, echo=True)
 
 

@@ -8,6 +8,7 @@ import Deleteuser from "./deleteuser";
 import { UserEditType, UserType } from "@/lib/types";
 import Edituser from "./edituser";
 import { useUser } from "@clerk/nextjs";
+import Subscription from "./Subscription";
 
 interface Props {
   users_promise: Promise<{ items: UserEditType[]; total?: number } | null>;
@@ -41,6 +42,20 @@ export const usersColumn: ColumnDef<UserEditType>[] = [
           {data.Email}
         </div>
       );
+    },
+  },
+  {
+    accessorKey: "subscription",
+    header: () => {
+      return (
+        <div className="font-[700] text-[14px] text-[#8A8A8A]">
+          Subscription
+        </div>
+      );
+    },
+    cell: ({ row }) => {
+      const data = row.original;
+      return <Subscription data={data} />;
     },
   },
   {
@@ -84,6 +99,7 @@ export const usersColumn: ColumnDef<UserEditType>[] = [
 const UsersContent: FC<Props> = ({ users_promise, current_user_promise }) => {
   const users = use(users_promise)?.items;
   if (!users) return;
+  console.log({ users });
   return (
     <div className="p-4 lg:p-7 lg:lg:px-10 xl:px-20  max-w-[1400px] lg:pt-[40px]">
       <DataTable<UserEditType, unknown>

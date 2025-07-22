@@ -1,9 +1,11 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -29,7 +31,7 @@ class UserDetails(Base):
     DefaultCompanyDetailsID = Column(
         String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), nullable=False
     )
-    IsPaid = Column(Boolean, default=False)
+    IsPaid = Column(Boolean, default=False, nullable=False)
 
     Comments = relationship("CommentDetails", back_populates="User")
     Role = relationship("RoleDetails", back_populates="Users")
@@ -46,6 +48,17 @@ class UserDetails(Base):
     Projects = relationship("ProjectUsersDetails", back_populates="User")
     CompanyLinks = relationship(
         "CompanyUser", back_populates="User", cascade="all, delete-orphan"
+    )
+
+    SubscriptionsPaid = relationship(
+        "PaymentSubscription",
+        foreign_keys="[PaymentSubscription.PayerID]",
+        back_populates="Payer",
+    )
+    SubscriptionsReceived = relationship(
+        "PaymentSubscription",
+        foreign_keys="[PaymentSubscription.BeneficiaryID]",
+        back_populates="Beneficiary",
     )
 
 
@@ -346,3 +359,59 @@ class BillingDetails(Base):
     CompanyDetails = relationship("CompanyDetailsInfo", back_populates="Billings")
 
     # CompanyDetailsInfo.Billings = relationship("BillingDetails", order_by=BillingDetails.BillingID, back_populates="CompanyDetails")
+
+
+class PaymentSubscription(Base):
+    __tablename__ = "PaymentSubscriptions"
+
+    SubscriptionID = Column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    PayerID = Column(
+        String(255), ForeignKey("User.ClerkID"), index=True
+    )  # Who is paying
+    BeneficiaryID = Column(
+        String(255), ForeignKey("User.ClerkID"), index=True, unique=True
+    )  # Who benefits
+    RazorpaySubscriptionID = Column(String(100))
+    RazorpayCustomerID = Column(String(100))
+    Status = Column(
+        String(50), default="created"
+    )  # created, active, paused, cancelled, expired
+    StartDate = Column(DateTime)
+    EndDate = Column(DateTime)
+    NextBillingDate = Column(DateTime)
+    CreatedAt = Column(DateTime, default=datetime.utcnow)
+    UpdatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    Payer = relationship(
+        "UserDetails", foreign_keys=[PayerID], back_populates="SubscriptionsPaid"
+    )
+    Beneficiary = relationship(
+        "UserDetails",
+        foreign_keys=[BeneficiaryID],
+        back_populates="SubscriptionsReceived",
+    )
+    Payments = relationship(
+        "PaymentDetails", 
+        back_populates="Subscription",
+        cascade="all, delete-orphan"
+    )
+
+class PaymentDetails(Base):
+    __tablename__ = "Payments"
+
+    PaymentID = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    SubscriptionID = Column(
+        String(36), ForeignKey("PaymentSubscriptions.SubscriptionID")
+    )
+    RazorpayPaymentID = Column(String(100))
+    Amount = Column(Float, nullable=False)
+    Currency = Column(String(10), default="INR")
+    Status = Column(String(50))  # created, authorized, captured, refunded, failed
+    Method = Column(String(50))  # payment method
+    InvoiceID = Column(String(100))
+    Description = Column(String(255))
+    CreatedAt = Column(DateTime, default=datetime.utcnow)
+
+    Subscription = relationship("PaymentSubscription", back_populates="Payments")
