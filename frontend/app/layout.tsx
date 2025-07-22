@@ -8,6 +8,7 @@ import { Roboto as FontSans } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import MyApp from "./pages/_app";
 import SetCookies from "@/components/set-cookies";
+import { ReactQueryProvider } from "@/components/providers";
 const fontSans = FontSans({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -140,8 +141,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
             },
           }}
         >
-          <NuqsAdapter>{children}</NuqsAdapter>
-          {/* <SetCookies /> */}
+          <ReactQueryProvider>
+            <NuqsAdapter>{children}</NuqsAdapter>
+            {/* <SetCookies /> */}
+          </ReactQueryProvider>
         </ClerkProvider>
         <Analytics />
       </body>

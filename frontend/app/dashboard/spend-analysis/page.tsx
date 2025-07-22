@@ -36,6 +36,7 @@ import {
   ParsedSearchParams,
   searchParamsCache,
 } from "@/components/dashboard/spend-analysis-comp/search-params";
+import { ErrorBoundaryCustom } from "@/components/dashboard/ErrorBoundary";
 
 const SpendAnalysis = async ({
   searchParams,
@@ -44,8 +45,8 @@ const SpendAnalysis = async ({
 }) => {
   const { startDate, endDate } = await searchParamsCache.parse(searchParams);
 
-  const header_view = await getSpendingHeaderView();
-  const spending_by_supplier_promise = getSpendingBySupplierfiltered({
+  // const header_view = await getSpendingHeaderView();
+  /* const spending_by_supplier_promise = getSpendingBySupplierfiltered({
     startDate,
     endDate,
   });
@@ -64,18 +65,11 @@ const SpendAnalysis = async ({
   const spending_by_top_supplier_promise = getSpendingByTopSupplierFiltered({
     startDate,
     endDate,
-  });
+  }); */
 
-  if (
-    !header_view &&
-    !spending_by_supplier_promise &&
-    !spending_by_month_promise &&
-    !spending_by_commodity_promise &&
-    !spending_by_location_promise &&
-    !spending_by_top_supplier_promise
-  ) {
+  /* if (!header_view) {
     return <EmptyStats />;
-  }
+  } */
 
   return (
     <div className="w-full bg-[#F6F6F6] p-4 lg:gap-6 lg:p-6 h-full">
@@ -95,77 +89,79 @@ const SpendAnalysis = async ({
 
       {/* cards */}
       <div className="">
-        <Suspense
-          fallback={<HeaderViewLoading />}
-          key={`1-${startDate}-${endDate}`}
-        >
-          <HeaderView header_view={header_view} />
-        </Suspense>
+        <ErrorBoundaryCustom>
+          <Suspense
+            fallback={<HeaderViewLoading />}
+            key={`1-${startDate}-${endDate}`}
+          >
+            <HeaderView />
+          </Suspense>
+        </ErrorBoundaryCustom>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-[12px]">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pl-8 pt-7">
               Spending by supplier
             </h2>
-            <Suspense
-              fallback={<BarchatLoading />}
-              key={`2-${startDate}-${endDate}`}
-            >
-              <Barchat
-                spending_by_supplier_promise={spending_by_supplier_promise}
-              />
-            </Suspense>
+            <ErrorBoundaryCustom>
+              <Suspense
+                fallback={<BarchatLoading />}
+                key={`2-${startDate}-${endDate}`}
+              >
+                <Barchat startDate={startDate} endDate={endDate} />
+              </Suspense>
+            </ErrorBoundaryCustom>
           </div>
           <div className="bg-white rounded-[12px]">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-8">
               Spending by month
             </h2>
-            <Suspense
-              fallback={<LinechatLoading />}
-              key={`3-${startDate}-${endDate}`}
-            >
-              <Linechat spending_by_month_promise={spending_by_month_promise} />
-            </Suspense>
+            <ErrorBoundaryCustom>
+              <Suspense
+                fallback={<LinechatLoading />}
+                key={`3-${startDate}-${endDate}`}
+              >
+                <Linechat startDate={startDate} endDate={endDate} />
+              </Suspense>
+            </ErrorBoundaryCustom>
           </div>
           <div className="bg-white rounded-[12px]">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6">
               Spending by commodity
             </h2>
-            <Suspense
-              fallback={<TreeMapLoading />}
-              key={`4-${startDate}-${endDate}`}
-            >
-              <TreeMap
-                spending_by_commodity_promise={spending_by_commodity_promise}
-              />
-            </Suspense>
+            <ErrorBoundaryCustom>
+              <Suspense
+                fallback={<TreeMapLoading />}
+                key={`4-${startDate}-${endDate}`}
+              >
+                <TreeMap startDate={startDate} endDate={endDate} />
+              </Suspense>
+            </ErrorBoundaryCustom>
           </div>
           <div className="bg-white rounded-[12px]">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6 mb-4">
               Spending by location
             </h2>
-            <Suspense
-              fallback={<GeoMapLoading />}
-              key={`5-${startDate}-${endDate}`}
-            >
-              <GeoMap
-                spending_by_location_promise={spending_by_location_promise}
-              />
-            </Suspense>
+            <ErrorBoundaryCustom>
+              <Suspense
+                fallback={<GeoMapLoading />}
+                key={`5-${startDate}-${endDate}`}
+              >
+                <GeoMap startDate={startDate} endDate={endDate} />
+              </Suspense>
+            </ErrorBoundaryCustom>
           </div>
           <div className="col-span-1 sm:col-span-2 bg-white rounded-[12px]">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-6">
               Top Supplier spend
             </h2>
-            <Suspense
-              fallback={<SupplierNeedsLoading />}
-              key={`6-${startDate}-${endDate}`}
-            >
-              <SupplierNeeds
-                spending_by_top_supplier_promise={
-                  spending_by_top_supplier_promise
-                }
-              />
-            </Suspense>
+            <ErrorBoundaryCustom>
+              <Suspense
+                fallback={<SupplierNeedsLoading />}
+                key={`6-${startDate}-${endDate}`}
+              >
+                <SupplierNeeds startDate={startDate} endDate={endDate} />
+              </Suspense>
+            </ErrorBoundaryCustom>
           </div>
         </div>
       </div>

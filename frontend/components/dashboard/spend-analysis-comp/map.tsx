@@ -4,17 +4,19 @@ import countriesfeatures from "./worldcountries.json";
 import { FC, use } from "react";
 import { SpendingByLocationType } from "@/lib/types";
 import { getCountryCode } from "@/lib/utils";
+import { props } from "./barchat";
+import { useSpendingByLocation } from "./react-query-fetchs";
 
 // make sure parent container have a defined height when using
 // responsive component, otherwise height will be 0 and
 // no chart will be rendered.
 // website examples showcase many properties,
 // you'll often use just a few of them.
-interface Props {
-  spending_by_location_promise: Promise<SpendingByLocationType[] | null>;
-}
-const GeoMap: FC<Props> = ({ spending_by_location_promise }) => {
-  const spending_by_location = use(spending_by_location_promise);
+const GeoMap: FC<props> = ({ startDate, endDate }) => {
+  const { data: spending_by_location } = useSpendingByLocation({
+    startDate,
+    endDate,
+  });
 
   if (!spending_by_location) return;
 

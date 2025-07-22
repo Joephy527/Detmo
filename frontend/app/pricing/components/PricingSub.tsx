@@ -112,9 +112,9 @@ export function Pricing() {
       if (typeof window !== "undefined" && (window as any).Razorpay) {
         const options = {
           key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-          amount: data?.amount || 100,
+          // amount: data?.amount || 100,
           currency: data?.currency || "INR",
-          name: "Your Company",
+          name: "Detmo",
           description: "Monthly Subscription",
           image: "/logo.svg",
           subscription_id: data.RazorpaySubscriptionID,

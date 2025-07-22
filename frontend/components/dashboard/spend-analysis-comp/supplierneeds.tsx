@@ -13,6 +13,8 @@ import {
 import Link from "next/link";
 import { RoleType, SpendingByTopSupplierType } from "@/lib/types";
 import { useUser } from "@clerk/nextjs";
+import { props } from "./barchat";
+import { useSpendingByTopSupplier } from "./react-query-fetchs";
 
 interface Props {
   spending_by_top_supplier_promise: Promise<{
@@ -144,8 +146,11 @@ export const usersColumn: ColumnDef<SpendingByTopSupplierType>[] = [
   },
 ];
 
-const SupplierNeeds: FC<Props> = ({ spending_by_top_supplier_promise }) => {
-  const spending_by_top_supplier = use(spending_by_top_supplier_promise);
+const SupplierNeeds: FC<props> = ({ startDate, endDate }) => {
+  const { data: spending_by_top_supplier } = useSpendingByTopSupplier({
+    startDate,
+    endDate,
+  });
 
   if (!spending_by_top_supplier) return;
 

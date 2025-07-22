@@ -10,12 +10,17 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { useSpendingBySupplier } from "./react-query-fetchs";
 
-interface props {
-  spending_by_supplier_promise: Promise<SpendingBySupplierType[] | null>;
+export interface props {
+  startDate?: string;
+  endDate?: string;
 }
-const Barchat: FC<props> = ({ spending_by_supplier_promise }) => {
-  const spending_by_supplier = use(spending_by_supplier_promise);
+const Barchat: FC<props> = ({ startDate, endDate }) => {
+  const { data: spending_by_supplier } = useSpendingBySupplier({
+    startDate,
+    endDate,
+  });
 
   if (!spending_by_supplier) return;
 

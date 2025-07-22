@@ -1,13 +1,14 @@
+"use client";
+
 import React, { use } from "react";
 
 import CardHeaders from "./cards-headers";
 import { HeaderViewType } from "@/lib/types";
+import { props } from "./barchat";
+import { useHeaderView } from "./react-query-fetchs";
 
-const HeaderView = ({
-  header_view,
-}: {
-  header_view: HeaderViewType | null;
-}) => {
+const HeaderView = () => {
+  const { data: header_view } = useHeaderView();
   return header_view ? (
     <div className="gap-4 grid grid-cols-1 sm:grid-cols-3 sm:col-span-3 xl:grid-cols-5 xl:col-span-5 mb-4">
       <CardHeaders

@@ -349,10 +349,10 @@ def sync_clerk_user_metadata(user: UserDetails, company_user: CompanyUser):
         clerk_user = clerk_client.users.get(user_id=user.ClerkID)
         current_metadata = clerk_user.public_metadata or {}
 
-        if current_metadata.get("role") != full_role:
+        if current_metadata.get("role") != full_role or current_metadata.get("company_id") != company_user.CompanyID:
             clerk_client.users.update_metadata(
                 user_id=user.ClerkID,
-                public_metadata={**current_metadata, "role": full_role},
+                public_metadata={**current_metadata, "role": full_role, "company_id": company_user.CompanyID},
             )
             logger.info(
                 f"Updated Clerk metadata: role='{full_role}' for user={user.ClerkID}"
@@ -1880,10 +1880,17 @@ def create_company_details(
     db: Session = Depends(get_db),
     current_user: UserDetails = Depends(get_current_user),
 ):
-    currency = CurrencyDetails(Currency=company.Currency.Currency)
-    db.add(currency)
-    db.commit()
-    db.refresh(currency)
+    # Check if currency already exists
+    currency = db.query(CurrencyDetails).filter(
+        CurrencyDetails.Currency == company.Currency.Currency
+    ).first()
+    
+    # If currency doesn't exist, create it
+    if not currency:
+        currency = CurrencyDetails(Currency=company.Currency.Currency)
+        db.add(currency)
+        db.commit()
+        db.refresh(currency)
 
     company_details = CompanyDetailsInfo(
         DisplayName=company.DisplayName,
@@ -1922,8 +1929,6 @@ def create_company_details(
 
     return company_details
 
-
-pass
 
 
 @app.get(

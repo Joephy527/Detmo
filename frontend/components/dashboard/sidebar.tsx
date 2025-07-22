@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -17,6 +17,8 @@ import { Button } from "../ui/button";
 import { cn } from "@/lib/utils";
 import { useCollapsibleStore } from "@/store/usecollapse";
 import CompanySelector from "./company-selector";
+import { Skeleton } from "../ui/skeleton";
+import { ErrorBoundaryCustom } from "./ErrorBoundary";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -47,7 +49,17 @@ export default function Sidebar() {
           </Link>
         </div>
         <div className="flex-1">
-          <CompanySelector />
+          <ErrorBoundaryCustom>
+            <Suspense
+              fallback={
+                <div className="px-4 mb-4">
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              }
+            >
+              <CompanySelector />
+            </Suspense>
+          </ErrorBoundaryCustom>
           <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
             <Link
               href="/dashboard/spend-analysis"

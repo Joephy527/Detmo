@@ -10,12 +10,14 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { props } from "./barchat";
+import { useSpendingByMonth } from "./react-query-fetchs";
 
-interface props {
-  spending_by_month_promise: Promise<SpendingByMonthType[] | null>;
-}
-const Linechat: FC<props> = ({ spending_by_month_promise }) => {
-  const spending_by_month = use(spending_by_month_promise);
+const Linechat: FC<props> = ({ startDate, endDate }) => {
+  const { data: spending_by_month } = useSpendingByMonth({
+    startDate,
+    endDate,
+  });
 
   if (!spending_by_month) return;
 
