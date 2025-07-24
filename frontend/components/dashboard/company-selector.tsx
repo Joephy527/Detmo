@@ -107,6 +107,8 @@ export default function CompanySelector() {
         onSuccess: (data: any) => {
           toast.success("Company created successfully");
           setNewCompanyName("");
+
+          window?.location?.reload();
         },
         onError: () => {
           toast.error("Something went wrong while creating the company");
@@ -123,6 +125,8 @@ export default function CompanySelector() {
       updateCompany(companyId, {
         onSuccess: (res) => {
           toast.success("Company updated successfully");
+
+          window?.location?.reload();
         },
         onError: (error) => {
           console.error("Error switching company:", error);

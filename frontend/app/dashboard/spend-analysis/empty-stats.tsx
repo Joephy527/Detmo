@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 
 import {
   Breadcrumb,
@@ -11,8 +11,21 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import UploadCSVDialog from "@/components/dashboard/spend-analysis-comp/upload-csv-dialog";
+import { countryNameToISOMap } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const EmptyStats = () => {
+  // Convert country map to array and sort alphabetically
+  const sortedCountries = Object.entries(countryNameToISOMap).sort(
+    ([countryA], [countryB]) => countryA.localeCompare(countryB),
+  );
+
   return (
     <div className="w-full grow bg-[#F6F6F6] p-4 lg:gap-6 lg:p-6 ">
       <Breadcrumb className=" ">
@@ -37,7 +50,7 @@ const EmptyStats = () => {
             commodity spends.{" "}
           </h1>
           <UploadCSVDialog text="Upload Purchase Orders" />
-          <div className="mt-4">
+          <div className="mt-4 flex gap-4 items-center">
             <a
               href="/sample_purchase_orders.csv"
               download="sample_purchase_orders.csv"
@@ -45,7 +58,39 @@ const EmptyStats = () => {
             >
               Download Sample CSV
             </a>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <button className="text-xs px-2 py-1 focus:outline-none h-auto border rounded-md border-primary text-primary">
+                  View Country Codes
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Country Codes Reference</DialogTitle>
+                </DialogHeader>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  {sortedCountries.map(([country, code]) => (
+                    <div
+                      key={code}
+                      className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded"
+                    >
+                      <span className="font-medium min-w-[180px]">
+                        {country}
+                      </span>
+                      <span className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
+                        {code}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
+
+          <p className="text-xs text-gray-500 text-center max-w-md mt-2">
+            Note: Your CSV should include country codes from the list above.
+          </p>
         </div>
       </div>
     </div>

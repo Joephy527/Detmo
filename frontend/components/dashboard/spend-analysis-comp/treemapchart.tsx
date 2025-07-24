@@ -7,6 +7,8 @@ import dynamic from "next/dynamic";
 import { SpendingByCommodityType } from "@/lib/types";
 import { props } from "./barchat";
 import { useSpendingByCommodity } from "./react-query-fetchs";
+import { Button } from "@/components/ui/button";
+import { EmptyStateFallback } from "./EmptyFallback";
 
 // Dynamically import ReactApexCharts with SSR disabled
 const ReactApexCharts = dynamic(() => import("react-apexcharts"), {
@@ -14,7 +16,11 @@ const ReactApexCharts = dynamic(() => import("react-apexcharts"), {
 });
 
 const TreeMap: FC<props> = ({ startDate, endDate }) => {
-  const { data: spending_by_commodity } = useSpendingByCommodity({
+  const {
+    data: spending_by_commodity,
+    isError,
+    refetch,
+  } = useSpendingByCommodity({
     startDate,
     endDate,
   });
@@ -25,7 +31,26 @@ const TreeMap: FC<props> = ({ startDate, endDate }) => {
     setIsMounted(true);
   }, []);
 
-  if (!spending_by_commodity || !isMounted) return null;
+  if (isError) {
+    return (
+      <div className="px-4 mb-4 h-full">
+        <div className="border rounded-md px-3 py-2 text-center h-full grid place-items-center">
+          <p className="text-red-500 text-xs">Something went wrong</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isMounted) return null;
+
+  if (!spending_by_commodity || spending_by_commodity?.length === 0) {
+    return (
+      <EmptyStateFallback message="spending by commodity" className="mt-4" />
+    );
+  }
 
   const options: ApexOptions = {
     chart: {
@@ -54,7 +79,7 @@ const TreeMap: FC<props> = ({ startDate, endDate }) => {
   ];
 
   return (
-    <div className="h-[350px] m-5 mr-0 mb-8 mt-2">
+    <div className="h-[350px] mx-2">
       <ReactApexCharts
         options={options}
         series={series}

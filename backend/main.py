@@ -1201,6 +1201,7 @@ def get_supplier_spend_with_dates(
     try:
         result = db.execute(text(query), params)
         data = [dict(row) for row in result.mappings()]
+        data.sort(key=lambda d: d["Total Spend"], reverse=True)
         return {"supplier_spend": data}
 
     except Exception as e:

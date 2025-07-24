@@ -11,18 +11,39 @@ import {
   CartesianGrid,
 } from "recharts";
 import { useSpendingBySupplier } from "./react-query-fetchs";
+import { Button } from "@/components/ui/button";
+import { EmptyStateFallback } from "./EmptyFallback";
 
 export interface props {
   startDate?: string;
   endDate?: string;
 }
 const Barchat: FC<props> = ({ startDate, endDate }) => {
-  const { data: spending_by_supplier } = useSpendingBySupplier({
+  const {
+    data: spending_by_supplier,
+    refetch,
+    isError,
+  } = useSpendingBySupplier({
     startDate,
     endDate,
   });
 
-  if (!spending_by_supplier) return;
+  if (isError) {
+    return (
+      <div className="px-4 mb-4 h-full">
+        <div className="border rounded-md px-3 py-2 text-center h-full grid place-items-center">
+          <p className="text-red-500 text-xs">Something went wrong</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!spending_by_supplier || spending_by_supplier.length === 0) {
+    return <EmptyStateFallback message="supplier spending" />;
+  }
 
   const rangeData = spending_by_supplier.map((data) => {
     return {

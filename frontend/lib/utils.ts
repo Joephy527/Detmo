@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Country name to ISO code mapping
-const countryNameToISOMap = {
+export const countryNameToISOMap = {
   Afghanistan: "AFG",
   Angola: "AGO",
   Albania: "ALB",
@@ -191,7 +191,7 @@ const countryNameToISOMap = {
 
 export function getCountryCode(countryName: string) {
   // Normalize the country name - trim whitespace and convert to lowercase
-  const normalizedName = countryName.trim().toLowerCase();
+  const normalizedName = countryName?.trim()?.toLowerCase();
 
   // Check for exact match (case insensitive)
   for (const [name, code] of Object.entries(countryNameToISOMap)) {

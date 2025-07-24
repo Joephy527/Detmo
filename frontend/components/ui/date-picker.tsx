@@ -76,7 +76,7 @@ export default function DatePickerComponent({
           initialFocus
           captionLayout="dropdown-buttons"
           fromYear={1950}
-          toYear={2050}
+          toYear={new Date().getFullYear()}
         />
       </PopoverContent>
     </Popover>

@@ -132,6 +132,12 @@ export function useCreateCompany() {
     onSuccess: (newCompany) => {
       // Invalidate all company-related queries
       queryClient.invalidateQueries({ queryKey: ["companyDetails"] });
+      /* queryClient.invalidateQueries({ queryKey: ["spendingSupplier"] });
+      queryClient.invalidateQueries({ queryKey: ["spendingMonth"] });
+      queryClient.invalidateQueries({ queryKey: ["spendingCommodity"] });
+      queryClient.invalidateQueries({ queryKey: ["spendingLocation"] });
+      queryClient.invalidateQueries({ queryKey: ["headerView"] });
+      queryClient.invalidateQueries({ queryKey: ["spendingTopSupplier"] }); */
     },
     onError: (error: Error) => {
       console.error("Company creation failed:", error);

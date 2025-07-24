@@ -15,6 +15,7 @@ import { RoleType, SpendingByTopSupplierType } from "@/lib/types";
 import { useUser } from "@clerk/nextjs";
 import { props } from "./barchat";
 import { useSpendingByTopSupplier } from "./react-query-fetchs";
+import { EmptyStateFallback } from "./EmptyFallback";
 
 interface Props {
   spending_by_top_supplier_promise: Promise<{
@@ -147,10 +148,27 @@ export const usersColumn: ColumnDef<SpendingByTopSupplierType>[] = [
 ];
 
 const SupplierNeeds: FC<props> = ({ startDate, endDate }) => {
-  const { data: spending_by_top_supplier } = useSpendingByTopSupplier({
+  const {
+    data: spending_by_top_supplier,
+    isError,
+    refetch,
+  } = useSpendingByTopSupplier({
     startDate,
     endDate,
   });
+
+  if (isError) {
+    return (
+      <div className="px-4 mb-4 h-full">
+        <div className="border rounded-md px-3 py-2 text-center h-full grid place-items-center">
+          <p className="text-red-500 text-xs">Something went wrong</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!spending_by_top_supplier) return;
 
@@ -160,6 +178,7 @@ const SupplierNeeds: FC<props> = ({ startDate, endDate }) => {
         columns={usersColumn}
         data={spending_by_top_supplier.items}
         infive
+        dateRange={`${startDate || "..."} - ${endDate || "..."}`}
       />
     </div>
   );

@@ -12,14 +12,35 @@ import {
 } from "recharts";
 import { props } from "./barchat";
 import { useSpendingByMonth } from "./react-query-fetchs";
+import { Button } from "@/components/ui/button";
+import { EmptyStateFallback } from "./EmptyFallback";
 
 const Linechat: FC<props> = ({ startDate, endDate }) => {
-  const { data: spending_by_month } = useSpendingByMonth({
+  const {
+    data: spending_by_month,
+    isError,
+    refetch,
+  } = useSpendingByMonth({
     startDate,
     endDate,
   });
 
-  if (!spending_by_month) return;
+  if (isError) {
+    return (
+      <div className="px-4 mb-4 h-full">
+        <div className="border rounded-md px-3 py-2 text-center h-full grid place-items-center">
+          <p className="text-red-500 text-xs">Something went wrong</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!spending_by_month || spending_by_month.length === 0) {
+    return <EmptyStateFallback message="spending by month" />;
+  }
 
   const rangeData = spending_by_month.map((data) => {
     return {
@@ -27,6 +48,7 @@ const Linechat: FC<props> = ({ startDate, endDate }) => {
       amount: data["Total Spend"],
     };
   });
+
   const tickFormater = (number: number) => {
     if (number > 1000000000) {
       return (number / 1000000000).toString() + "B";

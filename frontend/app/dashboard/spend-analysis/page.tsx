@@ -95,8 +95,8 @@ const SpendAnalysis = async ({
         >
           <HeaderView />
         </Suspense>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white rounded-[12px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-4">
+          <div className="bg-white rounded-[12px] min-h-fit">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pl-8 pt-7">
               Spending by supplier
             </h2>
@@ -109,7 +109,7 @@ const SpendAnalysis = async ({
               </Suspense>
             </ErrorBoundaryCustom>
           </div>
-          <div className="bg-white rounded-[12px]">
+          <div className="bg-white rounded-[12px] min-h-fit">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-8">
               Spending by month
             </h2>
@@ -122,7 +122,7 @@ const SpendAnalysis = async ({
               </Suspense>
             </ErrorBoundaryCustom>
           </div>
-          <div className="bg-white rounded-[12px]">
+          <div className="bg-white rounded-[12px] min-h-fit">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6">
               Spending by commodity
             </h2>
@@ -135,7 +135,7 @@ const SpendAnalysis = async ({
               </Suspense>
             </ErrorBoundaryCustom>
           </div>
-          <div className="bg-white rounded-[12px]">
+          <div className="bg-white rounded-[12px] min-h-fit">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pb-0 pt-7 pl-6 mb-4">
               Spending by location
             </h2>
@@ -148,7 +148,7 @@ const SpendAnalysis = async ({
               </Suspense>
             </ErrorBoundaryCustom>
           </div>
-          <div className="col-span-1 sm:col-span-2 bg-white rounded-[12px]">
+          <div className="col-span-1 sm:col-span-2 bg-white rounded-[12px] min-h-fit">
             <h2 className="text-[#8A8A8A] text-[18px] font-[400] p-5 pt-7 pl-6">
               Top Supplier spend
             </h2>

@@ -78,7 +78,7 @@ export function useSpendingBySupplier({
   }
 
   return useSuspenseQuery({
-    queryKey: ["spendingBySupplier", companyId, startDate, endDate],
+    queryKey: ["spendingSupplier", companyId, startDate, endDate],
     queryFn: async (): Promise<SpendingBySupplierType[] | null> => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
@@ -163,7 +163,7 @@ export function useSpendingByMonth({
   }
 
   return useSuspenseQuery({
-    queryKey: ["spendingByMonth", companyId, startDate, endDate],
+    queryKey: ["spendingMonth", companyId, startDate, endDate],
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
@@ -248,7 +248,7 @@ export function useSpendingByCommodity({
   }
 
   return useSuspenseQuery({
-    queryKey: ["spendingByCommodity", companyId, startDate, endDate],
+    queryKey: ["spendingCommodity", companyId, startDate, endDate],
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
@@ -333,7 +333,7 @@ export function useSpendingByLocation({
   }
 
   return useSuspenseQuery({
-    queryKey: ["spendingByLocation", companyId, startDate, endDate],
+    queryKey: ["spendingLocation", companyId, startDate, endDate],
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
@@ -417,7 +417,7 @@ export function useSpendingByTopSupplier({
   }
 
   return useSuspenseQuery({
-    queryKey: ["spendingByTopSupplier", companyId, startDate, endDate],
+    queryKey: ["spendingTopSupplier", companyId, startDate, endDate],
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");

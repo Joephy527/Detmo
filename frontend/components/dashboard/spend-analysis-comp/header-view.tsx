@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use } from "react";
+import React, { use, useEffect, useState } from "react";
 
 import CardHeaders from "./cards-headers";
 import { HeaderViewType } from "@/lib/types";
@@ -46,7 +46,7 @@ const HeaderView = () => {
         title="Total Spend"
         withSymbol
         countSymbol="$"
-        count={header_view.total_spend}
+        count={header_view.total_spend.toLocaleString()}
       />
       <CardHeaders
         description="Suppliers Count"
@@ -82,7 +82,7 @@ const HeaderView = () => {
         }
         title="Suppliers Count"
         countSymbol="$"
-        count={header_view.supplier_count}
+        count={header_view.supplier_count.toLocaleString()}
       />
       <CardHeaders
         description="Commodity Count"
@@ -123,7 +123,7 @@ const HeaderView = () => {
         }
         title="Commodity Count"
         countSymbol="$"
-        count={header_view.commodity_count}
+        count={header_view.commodity_count.toLocaleString()}
       />
       <CardHeaders
         description="Locations Count"
@@ -150,7 +150,7 @@ const HeaderView = () => {
         }
         title="Locations Count"
         countSymbol="$"
-        count={header_view.location_count}
+        count={header_view.location_count.toLocaleString()}
       />
       <CardHeaders
         description="PO Count"
@@ -181,7 +181,7 @@ const HeaderView = () => {
         }
         title="PO Count"
         countSymbol="$"
-        count={header_view.po_count}
+        count={header_view.po_count.toLocaleString()}
       />
     </div>
   ) : (

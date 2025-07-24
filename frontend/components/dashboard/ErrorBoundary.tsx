@@ -25,8 +25,10 @@ function ErrorFallback({
 
 export function ErrorBoundaryCustom({
   children,
+  onReset,
 }: {
   children: React.ReactNode;
+  onReset?: () => void;
 }) {
   return (
     <ReactErrorBoundary
@@ -34,6 +36,7 @@ export function ErrorBoundaryCustom({
       onError={(error: any) =>
         console.error("Error caught by boundary:", error)
       }
+      onReset={onReset}
     >
       {children}
     </ReactErrorBoundary>

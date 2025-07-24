@@ -12,7 +12,7 @@ export default function CardHeaders({
   Icon: JSX.Element;
   title: string;
   description: string;
-  count?: number;
+  count?: number | string;
   countSymbol?: string;
   withSymbol?: boolean;
 }) {
