@@ -61,6 +61,21 @@ class UserDetails(Base):
         back_populates="Beneficiary",
     )
 
+    # New relationships for referrals
+    ReferralsMade = relationship(
+        "Referral",
+        foreign_keys="[Referral.ReferrerID]",
+        back_populates="Referrer",
+        cascade="all, delete-orphan",
+    )
+
+    ReferralReceived = relationship(
+        "Referral",
+        foreign_keys="[Referral.RefereeID]",
+        back_populates="Referee",
+        uselist=False,
+    )
+
 
 class RoleDetails(Base):
     __tablename__ = "RoleDetails"
@@ -393,10 +408,9 @@ class PaymentSubscription(Base):
         back_populates="SubscriptionsReceived",
     )
     Payments = relationship(
-        "PaymentDetails", 
-        back_populates="Subscription",
-        cascade="all, delete-orphan"
+        "PaymentDetails", back_populates="Subscription", cascade="all, delete-orphan"
     )
+
 
 class PaymentDetails(Base):
     __tablename__ = "Payments"
@@ -415,3 +429,27 @@ class PaymentDetails(Base):
     CreatedAt = Column(DateTime, default=datetime.utcnow)
 
     Subscription = relationship("PaymentSubscription", back_populates="Payments")
+
+
+class Referral(Base):
+    __tablename__ = "referrals"
+
+    ReferralID = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ReferrerID = Column(
+        String, ForeignKey("User.ClerkID"), index=True, nullable=False
+    )  # ClerkID of referrer
+    RefereeID = Column(
+        String, ForeignKey("User.ClerkID"), index=True, nullable=False
+    )  # ClerkID of referred user
+    CreatedAt = Column(DateTime, default=datetime.utcnow)
+
+    Referrer = relationship(
+        "UserDetails", foreign_keys=[ReferrerID], back_populates="ReferralsMade"
+    )
+
+    Referee = relationship(
+        "UserDetails",
+        foreign_keys=[RefereeID],
+        back_populates="ReferralReceived",  # Singular (one-to-one)
+        uselist=False,  # Ensures a single referral (not a list)
+    )

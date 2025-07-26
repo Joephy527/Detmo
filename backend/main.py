@@ -19,7 +19,7 @@ from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
                                   get_swagger_ui_oauth2_redirect_html)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from sqlalchemy import or_, text
+from sqlalchemy import text
 from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
                             SQLAlchemyError)
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
@@ -349,10 +349,17 @@ def sync_clerk_user_metadata(user: UserDetails, company_user: CompanyUser):
         clerk_user = clerk_client.users.get(user_id=user.ClerkID)
         current_metadata = clerk_user.public_metadata or {}
 
-        if current_metadata.get("role") != full_role or current_metadata.get("company_id") != company_user.CompanyID:
+        if (
+            current_metadata.get("role") != full_role
+            or current_metadata.get("company_id") != company_user.CompanyID
+        ):
             clerk_client.users.update_metadata(
                 user_id=user.ClerkID,
-                public_metadata={**current_metadata, "role": full_role, "company_id": company_user.CompanyID},
+                public_metadata={
+                    **current_metadata,
+                    "role": full_role,
+                    "company_id": company_user.CompanyID,
+                },
             )
             logger.info(
                 f"Updated Clerk metadata: role='{full_role}' for user={user.ClerkID}"
@@ -391,6 +398,55 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
 
             # Sync metadata just once
             await run_in_threadpool(sync_clerk_user_metadata, user, company_user)
+
+            # Process referral if exists in unsafe_metadata
+            unsafe_metadata = data.get("unsafe_metadata", {})
+            referral_code = unsafe_metadata.get("referralCode")
+
+            if referral_code:
+                try:
+                    # 1. Prevent self-referrals
+                    if referral_code == clerk_id:
+                        logger.error(f"Self-referral attempt: {clerk_id}")
+                        raise HTTPException(
+                            status_code=400, detail="You cannot refer yourself"
+                        )
+
+                    # 2. Check if the referrer exists
+                    referrer = (
+                        db.query(UserDetails).filter_by(ClerkID=referral_code).first()
+                    )
+
+                    if not referrer:
+                        logger.error(f"Referrer not found: {referral_code}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Referral code is invalid (referrer does not exist)",
+                        )
+
+                    # 3. Check if referee already has a referral (optional)
+                    existing_referral = (
+                        db.query(Referral).filter_by(RefereeID=clerk_id).first()
+                    )
+                    if existing_referral:
+                        logger.error(f"User already has a referral: {clerk_id}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail="You already have an existing referral",
+                        )
+                    # Create referral entry
+                    referral = Referral(
+                        ReferrerID=referral_code,  # The clerkID of the referring user
+                        RefereeID=clerk_id,  # The clerkID of the new user
+                    )
+
+                    db.add(referral)
+                    db.commit()
+
+                    logger.info(f"Created referral from {referral_code} to {clerk_id}")
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to create referral: {str(e)}")
 
             return {"status": "created", "user_id": user.ClerkID}
 
@@ -600,35 +656,39 @@ async def get_company_users(
                 "Email": cu.User.Email,
                 "Role": cu.Role.UserRole,
                 "RoleID": cu.RoleID,
-                "Subscription": get_full_subscription_details(cu.User.SubscriptionsReceived)
+                "Subscription": get_full_subscription_details(
+                    cu.User.SubscriptionsReceived
+                ),
             }
             for cu in company_users
         ]
     }
 
+
 def get_full_subscription_details(subscriptions: list) -> Optional[dict] | str:
     """Returns complete subscription details with payer info"""
     if not subscriptions:
         return None
-    
+
     sub = subscriptions[0]
     if sub.Status not in ["pending", "active"]:
         return None
-        
+
     return {
         # Subscription IDs
         "system_subscription_id": sub.SubscriptionID,
         "razorpay_subscription_id": sub.RazorpaySubscriptionID,
-        
         # Status and dates
         "status": sub.Status,
         "start_date": sub.StartDate.isoformat() if sub.StartDate else None,
         "end_date": sub.EndDate.isoformat() if sub.EndDate else None,
-        "next_billing_date": sub.NextBillingDate.isoformat() if sub.NextBillingDate else None,
-        
+        "next_billing_date": (
+            sub.NextBillingDate.isoformat() if sub.NextBillingDate else None
+        ),
         # Full payer details
-        "payer": get_payer_details(sub.Payer) if sub.Payer else None
+        "payer": get_payer_details(sub.Payer) if sub.Payer else None,
     }
+
 
 def get_payer_details(payer: UserDetails) -> dict:
     """Returns complete payer information"""
@@ -638,6 +698,7 @@ def get_payer_details(payer: UserDetails) -> dict:
         "email": payer.Email,
         "company_id": payer.CompanyDetailsID,
     }
+
 
 @app.get("/v1/users", response_model=PaginatedResponse[UserResponse], tags=["Users"])
 async def get_users(
@@ -1879,10 +1940,12 @@ def create_company_details(
     current_user: UserDetails = Depends(get_current_user),
 ):
     # Check if currency already exists
-    currency = db.query(CurrencyDetails).filter(
-        CurrencyDetails.Currency == company.Currency.Currency
-    ).first()
-    
+    currency = (
+        db.query(CurrencyDetails)
+        .filter(CurrencyDetails.Currency == company.Currency.Currency)
+        .first()
+    )
+
     # If currency doesn't exist, create it
     if not currency:
         currency = CurrencyDetails(Currency=company.Currency.Currency)
@@ -1926,7 +1989,6 @@ def create_company_details(
     logger.info(f"Created CompanyUser link for admin: {company_user}")
 
     return company_details
-
 
 
 @app.get(
@@ -2608,10 +2670,12 @@ async def create_subscription(
 
         plan_id = os.getenv("SUBSCRIPTION_PLAN_ID", "")
         try:
-            expire_by = int((datetime.now(timezone.utc) + timedelta(hours=24)).timestamp())
+            expire_by = int(
+                (datetime.now(timezone.utc) + timedelta(hours=24)).timestamp()
+            )
         except Exception as e:
             print(f"Error calculating timestamp: {e}")
-            expire_by = int(datetime.now(timezone.utc).timestamp()) + 86400 
+            expire_by = int(datetime.now(timezone.utc).timestamp()) + 86400
 
         # Create subscription in Razorpay
         razorpay_subscription = razorpay_client.subscription.create(
@@ -2634,7 +2698,7 @@ async def create_subscription(
             BeneficiaryID=subscription.beneficiary_id,
             RazorpaySubscriptionID=razorpay_subscription["id"],
             RazorpayCustomerID=razorpay_customer_id,
-            Status=razorpay_subscription["status"],
+            Status="pending",
             CreatedAt=datetime.utcnow(),
         )
         db.add(db_subscription)
@@ -2835,17 +2899,22 @@ async def get_my_subscriptions(
     """Get subscriptions where current user is either payer or beneficiary"""
     subscriptions = (
         db.query(PaymentSubscription)
+        .options(joinedload(PaymentSubscription.Beneficiary))  # Eager load beneficiary
         .filter(
-            or_(
-                PaymentSubscription.PayerID == current_user.ClerkID,
-                PaymentSubscription.BeneficiaryID == current_user.ClerkID,
-            )
+            PaymentSubscription.PayerID == current_user.ClerkID,
+            PaymentSubscription.Status.in_(["active", "pending"]),
         )
         .order_by(PaymentSubscription.CreatedAt.desc())
         .all()
     )
 
-    return subscriptions
+    return [
+        {
+            **sub.__dict__,
+            "BeneficiaryEmail": sub.Beneficiary.Email if sub.Beneficiary else None,
+        }
+        for sub in subscriptions
+    ]
 
 
 @app.post("/v1/payments/subscriptions/{subscription_id}/cancel", tags=["Payments"])
@@ -2899,3 +2968,49 @@ async def cancel_subscription(
         return {"status": "success", "message": "Subscription cancelled"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/v1/my-referrals", response_model=List[dict])
+async def get_my_referrals(
+    time_period: str = "all",  # "all", "30d", "90d", "year"
+    db: Session = Depends(get_db),
+    current_user: UserDetails = Depends(get_current_user),
+):
+    """
+    Get list of users who signed up using current user's referral code
+    Returns: List of referrals with stats
+    """
+    # Calculate time filter
+    now = datetime.utcnow()
+    time_filters = {
+        "30d": now - timedelta(days=30),
+        "90d": now - timedelta(days=90),
+        "year": now - timedelta(days=365),
+        "all": None,
+    }
+
+    if time_period not in time_filters:
+        raise HTTPException(status_code=400, detail="Invalid time period")
+
+    # Base query
+    query = db.query(Referral).filter(Referral.ReferrerID == current_user.ClerkID)
+
+    # Apply time filter if needed
+    if time_period != "all":
+        query = query.filter(Referral.CreatedAt >= time_filters[time_period])
+
+    referrals = query.order_by(Referral.CreatedAt.desc()).all()
+
+    # Format response
+    result = {
+        "total": len(referrals),
+        "referrals": [
+            {
+                "referee_id": r.RefereeID,
+                "created_at": r.CreatedAt.isoformat(),
+            }
+            for r in referrals
+        ],
+    }
+
+    return result

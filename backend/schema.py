@@ -349,6 +349,7 @@ class SubscriptionResponse(BaseModel):
     NextBillingDate: Optional[datetime]
     CreatedAt: datetime
     UpdatedAt: datetime
+    BeneficiaryEmail: str | None
 
     class Config:
         orm_mode = True
