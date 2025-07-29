@@ -1,20 +1,21 @@
-import { Box, Heading, Text } from '@chakra-ui/react';
+import { Box, Heading, Text } from "@chakra-ui/react";
 
 export function Header() {
   return (
     <Box
-      as='section'
-      color='gray.50'
-      bg='purple.600'
-      pt={['60px', '60px', '90px']}
-      pb='198px'
-      px='8'
-      textAlign={['left', 'left', 'center']}
+      as="section"
+      color="gray.50"
+      bg="purple.600"
+      pt={["60px", "60px", "90px"]}
+      pb="198px"
+      px="8"
+      textAlign={["left", "left", "center"]}
+      mt="10"
     >
-      <Heading fontWeight='extrabold' fontSize={['3xl', '3xl', '5xl']}>
+      <Heading fontWeight="extrabold" fontSize={["3xl", "3xl", "5xl"]}>
         Simple pricing for your business
       </Heading>
-      <Text fontWeight='medium' fontSize={['lg', 'lg', '2xl']} pt='4'>
+      <Text fontWeight="medium" fontSize={["lg", "lg", "2xl"]} pt="4">
         A plan that is carefully crafted to suit your business.
       </Text>
     </Box>

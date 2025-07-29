@@ -8,10 +8,14 @@ import Link from "next/link";
 import { FC, useEffect } from "react";
 import ScrollButton from "@/components/ui/scrollButton";
 import { useAuth, useUser } from "@clerk/nextjs";
+import toast from "react-hot-toast";
 
-interface pageProps {}
+interface pageProps {
+  searchParams: { status?: string };
+}
 
-const page: FC<pageProps> = ({}) => {
+const page: FC<pageProps> = ({ searchParams }) => {
+  const status = searchParams?.status ?? "";
   const { isLoaded, user } = useUser();
   /* const { getToken } = useAuth();
     useEffect(() => {
@@ -30,6 +34,12 @@ const page: FC<pageProps> = ({}) => {
     }, [isLoaded, user, getToken]); */
 
   const userId = user?.id;
+
+  useEffect(() => {
+    if (status === "signed_up") {
+      toast.success("User created. Please login to access detmo.");
+    }
+  }, [searchParams]);
 
   return (
     <div className="bg-background pt-10 p-2   flex flex-col justify-center items-center gap-8">

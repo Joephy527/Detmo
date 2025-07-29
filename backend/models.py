@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -99,7 +100,7 @@ class CurrencyDetails(Base):
 class CompanyDetailsInfo(Base):
     __tablename__ = "CompanyDetails"
     CompanyDetailsID = Column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True
     )
     DisplayName = Column(String(255), nullable=False)
     PhoneNumber = Column(String(20))
@@ -191,36 +192,53 @@ class PurchaseOrderDetails(Base):
     PurchaseOrderID = Column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    OrderQuantity = Column(Float, nullable=False)
-    NetPrice = Column(Float, nullable=False)
-    ToBeDeliveredQty = Column(Float, nullable=False)
-    DocumentDate = Column(Date, nullable=False)
+    OrderQuantity = Column(Float, nullable=False, index=True)
+    NetPrice = Column(Float, nullable=False, index=True)
+    ToBeDeliveredQty = Column(Float, nullable=False, index=True)
+    DocumentDate = Column(Date, nullable=False, index=True)
 
-    CompanyDetailsID = Column(String(36), ForeignKey("CompanyDetails.CompanyDetailsID"))
+    CompanyDetailsID = Column(
+        String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), index=True
+    )
     CompanyDetails = relationship("CompanyDetailsInfo", back_populates="PurchaseOrder")
 
-    CommodityID = Column(String(36), ForeignKey("Commodity.CommodityID"))
-    Commodity = relationship("CommodityDetails", back_populates="PurchaseOrder")
+    CommodityID = Column(String(36), ForeignKey("Commodity.CommodityID"), index=True)
+    Commodity = relationship(
+        "CommodityDetails", back_populates="PurchaseOrder", lazy="selectin"
+    )
 
-    VendorID = Column(String(36), ForeignKey("Vendor.VendorID"))
-    Vendor = relationship("VendorDetails", back_populates="PurchaseOrder")
+    VendorID = Column(String(36), ForeignKey("Vendor.VendorID"), index=True)
+    Vendor = relationship(
+        "VendorDetails", back_populates="PurchaseOrder", lazy="joined"
+    )
 
-    MaterialGroupID = Column(String(36), ForeignKey("MaterialGroup.MaterialGroupID"))
+    MaterialGroupID = Column(
+        String(36), ForeignKey("MaterialGroup.MaterialGroupID"), index=True
+    )
     MaterialGroup = relationship("MaterialGroupDetails", back_populates="PurchaseOrder")
+
+    __table_args__ = (
+        # Composite index for common query pattern
+        Index("idx_po_company_commodity", "CompanyDetailsID", "CommodityID"),
+        # Another composite index
+        Index("idx_po_vendor_date", "VendorID", "DocumentDate"),
+    )
 
 
 class VendorDetails(Base):
     __tablename__ = "Vendor"
     VendorID = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    VendorName = Column(String(255), nullable=False)
-    Location = Column(String(255), nullable=False)
-    Country = Column(String(100), nullable=False)
+    VendorName = Column(String(255), nullable=False, index=True)
+    Location = Column(String(255), nullable=False, index=True)
+    Country = Column(String(100), nullable=False, index=True)
 
     PurchaseOrder = relationship(
         "PurchaseOrderDetails", back_populates="Vendor", cascade="all, delete-orphan"
     )
 
-    CompanyDetailsID = Column(String(36), ForeignKey("CompanyDetails.CompanyDetailsID"))
+    CompanyDetailsID = Column(
+        String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), index=True
+    )
     CompanyDetails = relationship("CompanyDetailsInfo", back_populates="Vendor")
 
 
@@ -229,8 +247,8 @@ class MaterialGroupDetails(Base):
     MaterialGroupID = Column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    MaterialGroupNumber = Column(String(50), nullable=False)
-    MaterialGroupDescription = Column(String(255), nullable=False)
+    MaterialGroupNumber = Column(String(50), nullable=False, index=True)
+    MaterialGroupDescription = Column(String(255), nullable=False, index=True)
 
     PurchaseOrder = relationship(
         "PurchaseOrderDetails",
@@ -238,7 +256,9 @@ class MaterialGroupDetails(Base):
         cascade="all, delete-orphan",
     )
 
-    CompanyDetailsID = Column(String(36), ForeignKey("CompanyDetails.CompanyDetailsID"))
+    CompanyDetailsID = Column(
+        String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), index=True
+    )
     CompanyDetails = relationship("CompanyDetailsInfo", back_populates="MaterialGroup")
 
 
@@ -247,9 +267,9 @@ class CommodityDetails(Base):
     CommodityID = Column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    CommodityName = Column(String(255), nullable=False)
+    CommodityName = Column(String(255), nullable=False, index=True)
     AffectedProduct = Column(String(255))
-    PartNumber = Column(String(100))
+    PartNumber = Column(String(100), index=True)
     PartDescription = Column(String(255))
 
     PurchaseOrder = relationship(
@@ -261,7 +281,9 @@ class CommodityDetails(Base):
         cascade="all, delete-orphan",
     )
 
-    CompanyDetailsID = Column(String(36), ForeignKey("CompanyDetails.CompanyDetailsID"))
+    CompanyDetailsID = Column(
+        String(36), ForeignKey("CompanyDetails.CompanyDetailsID"), index=True
+    )
     CompanyDetails = relationship("CompanyDetailsInfo", back_populates="Commodity")
 
 

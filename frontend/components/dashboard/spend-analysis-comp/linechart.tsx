@@ -85,7 +85,7 @@ const Linechat: FC<props> = ({ startDate, endDate }) => {
               }).format(value)
             }
           />
-          <Tooltip />
+          <Tooltip formatter={(value) => value.toLocaleString()} />
           <Line
             dataKey="amount"
             stroke="#6649B6"

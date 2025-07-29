@@ -1,9 +1,9 @@
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { createSearchParamsCache, parseAsString } from "nuqs/server";
 
 export const searchParams = {
   startDate: parseAsString.withDefault(
-    format(subDays(new Date(), 1000), "yyyy-MM-dd"),
+    format(new Date("2000-01-01"), "yyyy-MM-dd"),
   ),
   endDate: parseAsString.withDefault(format(new Date(), "yyyy-MM-dd")),
 };

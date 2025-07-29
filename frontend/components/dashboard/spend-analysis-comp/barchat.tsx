@@ -97,7 +97,10 @@ const Barchat: FC<props> = ({ startDate, endDate }) => {
             }
             stroke="#BFBFBF"
           />
-          <Tooltip cursor={{ fill: "transparent" }} />
+          <Tooltip
+            cursor={{ fill: "transparent" }}
+            formatter={(value) => value.toLocaleString()}
+          />
           <Bar
             dataKey="amount"
             fill="#8861F3"

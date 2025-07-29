@@ -27,7 +27,7 @@ export default function DatePickerComponent({
   icon,
   dateFormat = "dd/MM/yyyy",
 }: {
-  dateValue: Date;
+  dateValue: string;
   dateName: string;
   // onDateChange: (date: Date | undefined) => void;
   placeholder?: string;
@@ -37,7 +37,7 @@ export default function DatePickerComponent({
 }) {
   const [, setParams] = useQueryStates(searchParams, searchParamOption);
 
-  const [date, setDate] = React.useState<Date>(dateValue);
+  const [date, setDate] = React.useState<Date>(new Date(dateValue));
 
   React.useEffect(() => {
     setParams((prev) => ({
@@ -62,7 +62,7 @@ export default function DatePickerComponent({
             color="#121212"
             strokeWidth={1.5}
           />
-          {date ? format(date, dateFormat) : <span>{placeholder}</span>}
+          {date ? format(dateValue, dateFormat) : <span>{placeholder}</span>}
           {icon && <ChevronDown className="ml-2 h-4 w-4" />}
         </Button>
       </PopoverTrigger>
@@ -77,6 +77,7 @@ export default function DatePickerComponent({
           captionLayout="dropdown-buttons"
           fromYear={1950}
           toYear={new Date().getFullYear()}
+          isEndDate={dateName === "endDate"}
         />
       </PopoverContent>
     </Popover>

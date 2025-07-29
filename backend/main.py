@@ -2645,6 +2645,12 @@ async def create_subscription(
             .first()
         )
         if existing_sub:
+            if existing_sub.Status == "pending":
+                return {
+                    "subscription": existing_sub,
+                    "currency": subscription.currency,
+                }
+
             raise HTTPException(
                 status_code=400, detail="Beneficiary already has an active subscription"
             )

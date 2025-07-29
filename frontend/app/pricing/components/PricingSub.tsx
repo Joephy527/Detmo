@@ -33,7 +33,7 @@ export function Pricing() {
   const [loading, setLoading] = useState(false);
   const [beneficiaryEmail, setBeneficiaryEmail] = useState("");
   const { getToken } = useAuth();
-  const { user } = useUser();
+  const { user, isSignedIn } = useUser();
 
   const [isFetchingUser, setIsFetchingUser] = useState(false);
 
@@ -109,6 +109,8 @@ export function Pricing() {
       const data = jsonData.subscription;
       toast.success("Redirecting to payment...", { id: paymentToast });
 
+      // window.open(jsonData.payment_page_url, "_blank", "noopener,noreferrer");
+
       // Initialize Razorpay payment
       if (typeof window !== "undefined" && (window as any).Razorpay) {
         const options = {
@@ -132,9 +134,13 @@ export function Pricing() {
           notes: {
             beneficiary_id: userId || user?.id,
           },
-          theme: {
-            color: "#3399cc",
+          modal: {
+            ondismiss: () => toast.error("Payment window closed"),
+            escape: false, // Prevent closing by ESC key
           },
+          /* theme: {
+            color: "#3399cc",
+          }, */
         };
 
         const rzp = new (window as any).Razorpay(options);
@@ -196,6 +202,7 @@ export function Pricing() {
               onClick={handlePayment}
               isLoading={loading}
               loadingText="Processing..."
+              disabled={!isSignedIn}
             >
               Get Started
             </Button>

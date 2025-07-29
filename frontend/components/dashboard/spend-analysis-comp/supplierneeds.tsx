@@ -102,7 +102,10 @@ export const usersColumn: ColumnDef<SpendingByTopSupplierType>[] = [
       const data = row.original;
       return (
         <div className="font-[400] text-[14px] text-[#3B3C41]">
-          {data.TotalSpend}
+          {new Intl.NumberFormat("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(data.TotalSpend)}
         </div>
       );
     },

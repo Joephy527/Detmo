@@ -8,16 +8,30 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { format, setMonth } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "./select";
+import { useQueryStates } from "nuqs";
+import {
+  searchParamOption,
+  searchParams,
+} from "../dashboard/spend-analysis-comp/search-params";
 
-export type CalendarProps = React.ComponentProps<typeof DayPicker>;
+export type CalendarProps = React.ComponentProps<typeof DayPicker> & {
+  isEndDate?: boolean;
+};
 
 function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  isEndDate = false,
   ...props
 }: CalendarProps) {
-  const disabledDays = { after: new Date() };
+  const [{ startDate }] = useQueryStates(searchParams, searchParamOption);
+
+  const disabledDays: any = { after: new Date() };
+  if (isEndDate) {
+    disabledDays["before"] = startDate;
+  }
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}

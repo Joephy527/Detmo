@@ -10,8 +10,6 @@ export default function Page({
 }) {
   const refCode = searchParams?.ref;
 
-  console.log({ refCode });
-
   return (
     <div>
       <div className="mx-auto flex justify-center mb-5">
@@ -23,6 +21,7 @@ export default function Page({
       <SignUp
         path="/sign-up"
         unsafeMetadata={refCode ? { referralCode: refCode } : undefined}
+        forceRedirectUrl="/?status=signed_up"
       />
     </div>
   );

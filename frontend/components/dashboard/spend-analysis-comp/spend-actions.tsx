@@ -9,8 +9,17 @@ import UploadCSVDialog from "./upload-csv-dialog";
 import { downloadCSV } from "@/actions/spend-analysis";
 import { Spinner } from "@chakra-ui/react";
 import { format, subDays } from "date-fns";
+import SeeShortCodes from "./see-short-codes";
+import { ResetDateButton } from "./reset-days";
+import { useQueryStates } from "nuqs";
+import { searchParamOption, searchParams } from "./search-params";
 
 const SpendActions = () => {
+  const [{ startDate, endDate }] = useQueryStates(
+    searchParams,
+    searchParamOption,
+  );
+
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownload = async () => {
@@ -36,11 +45,13 @@ const SpendActions = () => {
 
   return (
     <div className=" flex md:flex-row flex-col justify-between items-center gap-4 py-4 mb-2.5">
-      <h1 className=" md:text-3xl sm:text-2xl text-xl font-medium">
-        Spend Analysis{" "}
+      <h1 className=" md:text-3xl sm:text-2xl text-xl font-medium min-w-fit">
+        Spend Analysis
       </h1>
-      <div className="flex gap-6 md:flex-row flex-col flex-wrap">
+      <div className="flex gap-4 md:flex-row flex-col flex-wrap">
         <div className=" flex gap-x-4 justify-center items-center">
+          <SeeShortCodes />
+
           <UploadCSVDialog />
 
           <Button
@@ -64,7 +75,7 @@ const SpendActions = () => {
         </div>
         <div className=" flex gap-x-4 justify-center items-center">
           <DatePickerComponent
-            dateValue={subDays(new Date(), 1000)}
+            dateValue={startDate}
             dateName="startDate"
             // onDateChange={() => {}}
             icon
@@ -72,7 +83,7 @@ const SpendActions = () => {
             placeholder={format(new Date(), "dd-mm-yyyy")}
           />
           <DatePickerComponent
-            dateValue={new Date()}
+            dateValue={endDate}
             dateName="endDate"
             // onDateChange={() => {}}
             icon
@@ -80,6 +91,7 @@ const SpendActions = () => {
             placeholder={format(new Date(), "dd-mm-yyyy")}
           />
         </div>
+        <ResetDateButton />
       </div>
     </div>
   );
