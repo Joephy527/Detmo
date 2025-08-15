@@ -74,7 +74,7 @@ class SourcingProjectCreate(BaseModel):
     BuyerEmail: Optional[EmailStr]
     ProjectSponserEmail: Optional[EmailStr]
     FinancePocEmail: Optional[EmailStr]
-    ProjectInterval: Optional[EmailStr]
+    ProjectInterval: Optional[str]
 
     CommodityName: str
     CommodityAffectedProduct: str

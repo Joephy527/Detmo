@@ -108,7 +108,7 @@ export default function Createprojectform({
       CommodityAffectedProduct: "",
       CommodityPartNumber: CommodityPartNumber ?? "",
       CommodityPartDescription: "",
-      Currency: "USD",
+      // Currency: "USD",
     },
   });
 
@@ -607,25 +607,6 @@ export default function Createprojectform({
                         )}
                       />
                     </div>
-                    <FormField
-                      control={form.control}
-                      name="ProjectInterval"
-                      render={({ field }) => (
-                        <FormItem className="w-full">
-                          <FormLabel className="text-[15px] sm:text-[16px] md:text-[17px] font-[700]">
-                            Project Interval
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter project interval"
-                              className="bg-[#F6F6F6] rounded-[8px] h-[45px]"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                   </>
                 )}
 

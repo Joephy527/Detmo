@@ -1,14 +1,14 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { FC, use, useEffect, useState } from "react";
 
 import CardHeaders from "./cards-headers";
 import { HeaderViewType } from "@/lib/types";
 import { props } from "./barchat";
 import { useHeaderView } from "./react-query-fetchs";
 
-const HeaderView = () => {
-  const { data: header_view } = useHeaderView();
+const HeaderView: FC<props> = ({ startDate, endDate }) => {
+  const { data: header_view } = useHeaderView({ startDate, endDate });
 
   if (!header_view || Object.keys(header_view).length === 0) {
     throw new Error("Header view cannot be empty");

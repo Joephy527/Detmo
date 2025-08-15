@@ -449,12 +449,23 @@ export function useSpendingByTopSupplier({
 async function fetchHeaderView({
   companyId,
   token,
+  startDate,
+  endDate,
 }: {
   companyId: string;
   token: string;
+  startDate?: string;
+  endDate?: string;
 }): Promise<HeaderViewType> {
+  const params = new URLSearchParams();
+
+  /* if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate); */
+
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/headerview/${companyId}`,
+    `${process.env.NEXT_PUBLIC_API_URL}/headerview/direct/${companyId}${
+      params.toString() ? `?${params.toString()}` : ""
+    }`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -471,7 +482,13 @@ async function fetchHeaderView({
   return response.json();
 }
 
-export function useHeaderView() {
+export function useHeaderView({
+  startDate,
+  endDate,
+}: {
+  startDate?: string;
+  endDate?: string;
+}) {
   const { getToken } = useAuth();
   const { isLoaded, user } = useUser();
 
@@ -503,6 +520,8 @@ export function useHeaderView() {
       return fetchHeaderView({
         companyId,
         token,
+        startDate,
+        endDate,
       });
     },
     staleTime: 5 * 60 * 1000, // 5 minutes

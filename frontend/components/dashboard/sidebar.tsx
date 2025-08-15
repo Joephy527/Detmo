@@ -19,10 +19,17 @@ import { useCollapsibleStore } from "@/store/usecollapse";
 import CompanySelector from "./company-selector";
 import { Skeleton } from "../ui/skeleton";
 import { ErrorBoundaryCustom } from "./ErrorBoundary";
+import { useUser } from "@clerk/nextjs"; // Import Clerk's useUser hook
+import { RoleType } from "@/lib/types";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { isOpen, onClose, onOpen } = useCollapsibleStore();
+  const { user, isLoaded } = useUser();
+
+  const role: RoleType = user?.publicMetadata?.role as RoleType;
+  const isPaid = role?.includes("paid");
+
   return (
     <div
       className={cn(
@@ -94,24 +101,26 @@ export default function Sidebar() {
             </Link>
           </nav>
         </div>
-        <div className="mt-auto p-4">
-          <Card x-chunk="dashboard-02-chunk-0">
-            <CardHeader className="p-2 pt-0 md:p-4">
-              <CardTitle>Upgrade to Pro</CardTitle>
-              <CardDescription>
-                Unlock all features and get unlimited access to our support
-                team.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-2 pt-0 md:p-4 md:pt-0">
-              <Link href="/pricing" target="_blank">
-                <Button size="sm" className="w-full">
-                  Upgrade
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        {isLoaded && !isPaid && (
+          <div className="mt-auto p-4">
+            <Card x-chunk="dashboard-02-chunk-0">
+              <CardHeader className="p-2 pt-0 md:p-4">
+                <CardTitle>Upgrade to Pro</CardTitle>
+                <CardDescription>
+                  Unlock all features and get unlimited access to our support
+                  team.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-2 pt-0 md:p-4 md:pt-0">
+                <Link href="/pricing" target="_blank">
+                  <Button size="sm" className="w-full">
+                    Upgrade
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );

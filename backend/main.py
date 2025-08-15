@@ -19,7 +19,7 @@ from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
                                   get_swagger_ui_oauth2_redirect_html)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from sqlalchemy import text
+from sqlalchemy import and_, text
 from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
                             SQLAlchemyError)
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
@@ -33,6 +33,8 @@ from razor import razorpay_client
 from rbac import (ADMIN_ROLE_ID, get_current_active_admin,
                   get_current_active_user, get_current_user)
 from schema import *
+from send_emails import (APP_BASE_URL, build_referral_url_from_clerk_id,
+                         send_project_invites_smtp, smtp_username)
 
 load_dotenv()
 
@@ -1176,9 +1178,75 @@ async def download_csv(
 
 # Endpoint to fetch summary counts by company ID
 # Combined API endpoint to fetch all counts
+@app.get("/v1/headerview/direct/{company_id}", tags=["Header View"])
+def summary_counts_with_dates(
+    company_id: str,
+    current_user: UserDetails = Depends(get_current_user),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    if not company_id or company_id == "undefined":
+        raise HTTPException(status_code=400, detail="Invalid company_id")
+
+    query = """
+        SELECT 
+            po."CompanyDetailsID" AS "Company ID",
+            ROUND(SUM(po."OrderQuantity" * po."NetPrice")::numeric, 2) AS "Total Spend",
+            COUNT(DISTINCT po."VendorID") AS "Supplier Count",
+            COUNT(DISTINCT po."CommodityID") AS "Commodity Count",
+            COUNT(DISTINCT v."Location") AS "Location Count",
+            COUNT(po."PurchaseOrderID") AS "PO Count"
+        FROM "PurchaseOrder" po
+        JOIN "Vendor" v ON po."VendorID"::text = v."VendorID"::text
+        WHERE po."CompanyDetailsID" = :company_id
+    """
+
+    params = {"company_id": company_id}
+
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" >= :start_date'
+            params["start_date"] = start_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+            )
+
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+            query += ' AND po."DocumentDate" <= :end_date'
+            params["end_date"] = end_date_obj
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+            )
+
+    query += ' GROUP BY po."CompanyDetailsID"'
+
+    try:
+        df = pd.read_sql(text(query), engine, params=params)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if df.empty:
+        return {}
+
+    summary = {
+        "company_id": str(df["Company ID"].iloc[0]),
+        "total_spend": float(df["Total Spend"].iloc[0]),
+        "supplier_count": float(df["Supplier Count"].iloc[0]),
+        "commodity_count": float(df["Commodity Count"].iloc[0]),
+        "location_count": float(df["Location Count"].iloc[0]),
+        "po_count": float(df["PO Count"].iloc[0]),
+    }
+
+    return summary
+
 @app.get("/v1/headerview/{company_id}", tags=["Header View"])
 def summary_counts(
-    company_id: str, current_user: UserDetails = Depends(get_current_active_user)
+    company_id: str, current_user: UserDetails = Depends(get_current_user)
 ):
     if not company_id or company_id == "undefined":
         raise HTTPException(status_code=400, detail="Invalid company_id")
@@ -1718,49 +1786,100 @@ def top_supplier_spend(
 
 
 # Define your POST endpoint
+
+def _project_match_filter(project: SourcingProjectCreate, company_id: str, commodity_id: str):
+    # Map all persisted columns you want to include in equality comparison.
+    # Skip None so optional fields don't block a match.
+    fields_to_match = {
+        "Name": project.Name,
+        "Objective": project.Objective,
+        "Saving": project.Saving,
+        "ProjectType": project.ProjectType,
+        "StartDate": project.StartDate,
+        "EndDate": project.EndDate,
+        "Phase": project.Phase,
+        "Status": project.Status,
+        "SourcingPmEmail": project.SourcingPmEmail,
+        "ScmManagerEmail": project.ScmManagerEmail,
+        "SelectedSupplierPmEmail": project.SelectedSupplierPmEmail,
+        "BuyerEmail": project.BuyerEmail,
+        "ProjectSponserEmail": project.ProjectSponserEmail,
+        "FinancePocEmail": project.FinancePocEmail,
+        "ProjectInterval": project.ProjectInterval,
+        # always include scoping keys:
+        "CompanyDetailsID": company_id,
+        "CommodityID": commodity_id,
+    }
+
+    return and_(*[
+        getattr(SourcingProjectDetails, col) == val
+        for col, val in fields_to_match.items()
+        if val is not None
+    ])
+
+
 @app.post("/v1/projects", tags=["Sourcing Project"])
 def create_sourcing_project_endpoint(
     project: SourcingProjectCreate,
+    background_tasks: BackgroundTasks,
     company_id: str,
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_user),
+    current_user: UserDetails = Depends(get_current_user),
 ):
-    # Check if the company with provided CompanyDetailsID exists
+    # 0) Company exists?
     company = (
         db.query(CompanyDetailsInfo)
         .filter(CompanyDetailsInfo.CompanyDetailsID == company_id)
         .first()
     )
     if not company:
-        raise HTTPException(
-            status_code=404, detail=f"Company with ID {company_id} not found"
+        raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found")
+
+    # 1) Find-or-create Commodity (scoped by company + all fields)
+    commodity = (
+        db.query(CommodityDetails)
+        .filter(
+            CommodityDetails.CompanyDetailsID == company_id,
+            CommodityDetails.CommodityName == project.CommodityName,
+            CommodityDetails.AffectedProduct == project.CommodityAffectedProduct,
+            CommodityDetails.PartNumber == project.CommodityPartNumber,
+            CommodityDetails.PartDescription == project.CommodityPartDescription,
         )
-
-    # Generate UUID for CommodityID
-    commodity_id = str(uuid.uuid4())
-
-    # Create CommodityDetails object
-    commodity_details = CommodityDetails(
-        CommodityID=commodity_id,
-        CommodityName=project.CommodityName,
-        AffectedProduct=project.CommodityAffectedProduct,
-        PartNumber=project.CommodityPartNumber,
-        PartDescription=project.CommodityPartDescription,
-        CompanyDetailsID=company_id,  # Associate commodity with company
+        .first()
     )
-    db.add(commodity_details)
 
-    # Create SourcingProjectDetails object
+    commodity_created = False
+    if commodity is None:
+        commodity = CommodityDetails(
+            CommodityName=project.CommodityName,
+            AffectedProduct=project.CommodityAffectedProduct,
+            PartNumber=project.CommodityPartNumber,
+            PartDescription=project.CommodityPartDescription,
+            CompanyDetailsID=company_id,
+        )
+        db.add(commodity)
+        db.flush()  # so CommodityID is available
+        commodity_created = True
+
+    # 2) Find-or-create SourcingProject using ALL fields (non-null) + company + commodity
+    match_filter = _project_match_filter(project, company_id, commodity.CommodityID)
+    existing = db.query(SourcingProjectDetails).filter(match_filter).first()
+
+    if existing:
+        return {
+            "message": "Sourcing project already exists (all-field match)",
+            "project_id": existing.SourcingProjectID,
+            "created": False,
+            "commodity_created": commodity_created,
+        }
+
     new_project = SourcingProjectDetails(
-        SourcingProjectID=str(uuid.uuid4()),
         Name=project.Name,
         Objective=project.Objective,
         Saving=project.Saving,
         ProjectType=project.ProjectType,
-        StartDate=project.StartDate,  # Directly assign if it's already a datetime.date object
-        EndDate=(
-            project.EndDate if project.EndDate else None
-        ),  # Directly assign if it's already a datetime.date object
+        StartDate=project.StartDate,
+        EndDate=project.EndDate if project.EndDate else None,
         Phase=project.Phase,
         Status=project.Status,
         SourcingPmEmail=project.SourcingPmEmail,
@@ -1771,20 +1890,52 @@ def create_sourcing_project_endpoint(
         FinancePocEmail=project.FinancePocEmail,
         ProjectInterval=project.ProjectInterval,
         CompanyDetailsID=company_id,
-        CommodityID=commodity_id,  # Associate project with commodity
+        CommodityID=commodity.CommodityID,
     )
     db.add(new_project)
-
     db.commit()
     db.refresh(new_project)
+
+    clerk_id = current_user.ClerkID
+    referral_url = build_referral_url_from_clerk_id(clerk_id) if clerk_id else f"{APP_BASE_URL}/sign-up"
+
+    # Recipients (only those provided)
+    recipients = [
+        project.SourcingPmEmail,
+        project.ScmManagerEmail,
+        project.SelectedSupplierPmEmail,
+        project.BuyerEmail,
+        project.ProjectSponserEmail,
+        project.FinancePocEmail,
+    ]
+    sender_email = current_user.Email or smtp_username
+    sender_display = current_user.UserName or sender_email
+
+    email_roles = {
+        (project.SourcingPmEmail or "").lower(): "Sourcing PM",
+        (project.ScmManagerEmail or "").lower(): "SCM Manager",
+        (project.SelectedSupplierPmEmail or "").lower(): "Selected Supplier PM",
+        (project.BuyerEmail or "").lower(): "Buyer",
+        (project.ProjectSponserEmail or "").lower(): "Project Sponsor",
+        (project.FinancePocEmail or "").lower(): "Finance POC",
+    }
+
+    background_tasks.add_task(
+        send_project_invites_smtp,
+        sender_email,
+        sender_display,
+        new_project.Name,
+        referral_url,
+        recipients,
+        email_roles
+    )
 
     return {
         "message": "Sourcing project created successfully",
         "project_id": new_project.SourcingProjectID,
+        "created": True,
+        "commodity_created": commodity_created,
     }
-
-
-pass
 
 
 # api to get SourcingProject
@@ -1836,8 +1987,9 @@ async def get_projects(
 def update_sourcing_project_endpoint(
     project_id: str,
     project_update: SourcingProjectUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: UserDetails = Depends(get_current_active_user),
+    current_user: UserDetails = Depends(get_current_user),
 ):
     # Fetch the existing project
     project = (
@@ -1848,7 +2000,25 @@ def update_sourcing_project_endpoint(
     if not project:
         raise HTTPException(status_code=404, detail="Sourcing project not found")
 
-    # Update project details
+    ROLE_LABELS = {
+        "SourcingPmEmail": "Sourcing PM",
+        "ScmManagerEmail": "SCM Manager",
+        "SelectedSupplierPmEmail": "Selected Supplier PM",
+        "BuyerEmail": "Buyer",
+        "ProjectSponserEmail": "Project Sponsor",
+        "FinancePocEmail": "Finance POC",
+    }
+
+    # --- Track email changes (old → new) for the 6 role emails ---
+    changed_emails = []  # list[(field_name, new_email)]
+    def _changed(old_val: str | None, new_val: str | None) -> bool:
+        if new_val is None:  # not provided in payload
+            return False
+        old = (old_val or "").casefold()
+        new = (new_val or "").casefold()
+        return old != new
+
+    # Update project details (non-email fields first)
     if project_update.Name is not None:
         project.Name = project_update.Name
     if project_update.Objective is not None:
@@ -1865,20 +2035,34 @@ def update_sourcing_project_endpoint(
         project.Phase = project_update.Phase
     if project_update.Status is not None:
         project.Status = project_update.Status
-    if project_update.SourcingPmEmail is not None:
-        project.SourcingPmEmail = project_update.SourcingPmEmail
-    if project_update.ScmManagerEmail is not None:
-        project.ScmManagerEmail = project_update.ScmManagerEmail
-    if project_update.SelectedSupplierPmEmail is not None:
-        project.SelectedSupplierPmEmail = project_update.SelectedSupplierPmEmail
-    if project_update.BuyerEmail is not None:
-        project.BuyerEmail = project_update.BuyerEmail
-    if project_update.ProjectSponserEmail is not None:
-        project.ProjectSponserEmail = project_update.ProjectSponserEmail
-    if project_update.FinancePocEmail is not None:
-        project.FinancePocEmail = project_update.FinancePocEmail
     if project_update.ProjectInterval is not None:
         project.ProjectInterval = project_update.ProjectInterval
+
+    # Email fields: detect changes, then assign
+    if _changed(project.SourcingPmEmail, project_update.SourcingPmEmail):
+        project.SourcingPmEmail = project_update.SourcingPmEmail
+        if project.SourcingPmEmail:
+            changed_emails.append(("SourcingPmEmail", project.SourcingPmEmail))
+    if _changed(project.ScmManagerEmail, project_update.ScmManagerEmail):
+        project.ScmManagerEmail = project_update.ScmManagerEmail
+        if project.ScmManagerEmail:
+            changed_emails.append(("ScmManagerEmail", project.ScmManagerEmail))
+    if _changed(project.SelectedSupplierPmEmail, project_update.SelectedSupplierPmEmail):
+        project.SelectedSupplierPmEmail = project_update.SelectedSupplierPmEmail
+        if project.SelectedSupplierPmEmail:
+            changed_emails.append(("SelectedSupplierPmEmail", project.SelectedSupplierPmEmail))
+    if _changed(project.BuyerEmail, project_update.BuyerEmail):
+        project.BuyerEmail = project_update.BuyerEmail
+        if project.BuyerEmail:
+            changed_emails.append(("BuyerEmail", project.BuyerEmail))
+    if _changed(project.ProjectSponserEmail, project_update.ProjectSponserEmail):
+        project.ProjectSponserEmail = project_update.ProjectSponserEmail
+        if project.ProjectSponserEmail:
+            changed_emails.append(("ProjectSponserEmail", project.ProjectSponserEmail))
+    if _changed(project.FinancePocEmail, project_update.FinancePocEmail):
+        project.FinancePocEmail = project_update.FinancePocEmail
+        if project.FinancePocEmail:
+            changed_emails.append(("FinancePocEmail", project.FinancePocEmail))
 
     # Update commodity details if provided
     if (
@@ -1905,6 +2089,32 @@ def update_sourcing_project_endpoint(
     # Commit the transaction
     db.commit()
     db.refresh(project)
+
+    # --- Prepare and enqueue emails for the changed addresses ---
+    if changed_emails:
+        # Map recipient -> role label
+        recipient_roles = {}
+        for field, email in changed_emails:
+            if not email:
+                continue
+            lbl = ROLE_LABELS.get(field, "Team Member")
+            recipient_roles[email.lower()] = lbl
+
+        # Sender/display + referral link
+        sender_email = current_user.Email or smtp_username
+        sender_display = current_user.UserName or sender_email
+        clerk_id = current_user.ClerkID
+        referral_url = build_referral_url_from_clerk_id(clerk_id) if clerk_id else f"{APP_BASE_URL}/sign-up"
+
+        background_tasks.add_task(
+            send_project_invites_smtp,
+            sender_email,
+            sender_display,
+            project.Name,
+            referral_url,
+            list(recipient_roles.keys()),       # only the changed emails
+            recipient_roles,  # include roles so copy reads “as the <Role>”
+        )
 
     return {
         "message": "Sourcing project updated successfully",

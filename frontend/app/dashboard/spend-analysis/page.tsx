@@ -93,7 +93,7 @@ const SpendAnalysis = async ({
           fallback={<HeaderViewLoading />}
           key={`1-${startDate}-${endDate}`}
         >
-          <HeaderView />
+          <HeaderView startDate={startDate} endDate={endDate} />
         </Suspense>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-4">
           <div className="bg-white rounded-[12px] min-h-fit">

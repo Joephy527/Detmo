@@ -19,7 +19,9 @@ const Navbar: FC<NavbarProps> = ({}) => {
       className=" flex justify-start items-center w-full md:p-4 p-2 min-h-20 bg-background 
     text-foreground fixed top-0 shadow-sm shadow-muted"
     >
-      <Image src="/logo.svg" alt="logo" width={170} height={100} />
+      <Link href="/">
+        <Image src="/logo.svg" alt="logo" width={170} height={100} />
+      </Link>
       <nav
         className="hidden  md:flex gap-x-6 justify-end items-center ml-auto bg-muted
        text-card-foreground rounded-md p-1"
