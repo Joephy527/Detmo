@@ -25,11 +25,17 @@ function Calendar({
   isEndDate = false,
   ...props
 }: CalendarProps) {
-  const [{ startDate }] = useQueryStates(searchParams, searchParamOption);
+  const [{ startDate, endDate }] = useQueryStates(
+    searchParams,
+    searchParamOption,
+  );
 
   const disabledDays: any = {};
+
   if (isEndDate) {
     disabledDays["before"] = startDate;
+  } else {
+    disabledDays["after"] = endDate;
   }
 
   return (

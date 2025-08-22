@@ -21,7 +21,6 @@ export default function Page({
       <SignUp
         path="/sign-up"
         unsafeMetadata={refCode ? { referralCode: refCode } : undefined}
-        forceRedirectUrl="/?status=signed_up"
       />
     </div>
   );

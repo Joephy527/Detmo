@@ -41,7 +41,7 @@ const page: FC<pageProps> = ({ searchParams }) => {
         duration: 5000,
       });
     }
-  }, [searchParams]);
+  }, [status]);
 
   return (
     <div className="bg-background pt-10 p-2   flex flex-col justify-center items-center gap-8">

@@ -20,12 +20,12 @@ from fastapi.openapi.docs import (get_redoc_html, get_swagger_ui_html,
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy import and_, text
-from sqlalchemy.exc import (IntegrityError, NoResultFound, OperationalError,
-                            SQLAlchemyError)
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
 from sqlalchemy.orm import Session, joinedload, selectinload, sessionmaker
 from tenacity import (before_sleep_log, retry, retry_if_exception_type,
                       stop_after_attempt, wait_exponential, wait_fixed)
 
+from blocked_domains import blocked_domains
 from clerk_client import clerk_client
 from database import *
 from models import *
@@ -81,7 +81,9 @@ origins = [
     "https://detmo-chi.vercel.app",
     "https://www.detmo.in",
     "https://www.detmo.co",
-    "https://detmo-seven.vercel.app"
+    "https://detmo-seven.vercel.app",
+    "https://detmo.co",
+    "https://detmo.in",
     # Add other origins if needed
 ]
 
@@ -197,19 +199,18 @@ def get_or_create_default_currency(db: Session):
 
 def create_company(
     db: Session, user_data: dict, currency_id: str
-) -> CompanyDetailsInfo:
-    """Create or get existing company for a user with comprehensive error handling"""
+) -> CompanyDetailsInfo | None:
+    """Create or get existing company for a user with comprehensive error handling."""
     try:
         clerk_id = user_data["id"]
-        email = user_data["email_addresses"][0]["email_address"]
 
-        # Validate inputs
         if not clerk_id:
-            raise ValueError("Missing required ClerkID")
+            raise ValueError("Missing ClerkID")
+
+        email = get_verified_email(user_data)
         if not email:
-            raise ValueError("User email is required")
-        if not currency_id:
-            raise ValueError("Currency ID is required")
+            logger.warning(f"Skipping company creation for {clerk_id}: no valid email")
+            return None
 
         # Check for existing company via user's default company
         existing_user = (
@@ -218,7 +219,6 @@ def create_company(
             .filter_by(ClerkID=clerk_id)
             .first()
         )
-
         if existing_user and existing_user.DefaultCompany:
             return existing_user.DefaultCompany
 
@@ -227,9 +227,15 @@ def create_company(
         if not currency:
             raise ValueError(f"Currency with ID {currency_id} not found")
 
+        # Idempotency: see if a company already exists for this email
+        existing_company = db.query(CompanyDetailsInfo).filter_by(Email=email).first()
+        if existing_company:
+            logger.info(f"Reusing existing company for email {email}")
+            return existing_company
+
         # Create new company
         new_company = CompanyDetailsInfo(
-            DisplayName=f"New Company for {user_data['first_name']} {user_data.get('last_name', '')}",
+            DisplayName=f"New Company for {user_data.get('first_name', '')} {user_data.get('last_name', '')}",
             PhoneNumber="1234567890",
             Email=email,
             LegalName="New Company LLC",
@@ -243,28 +249,16 @@ def create_company(
         )
 
         db.add(new_company)
-        try:
-            db.flush()
-            logger.info(
-                f"Created new company {new_company.CompanyDetailsID} for user {clerk_id}"
-            )
-            return new_company
-        except IntegrityError as e:
-            db.rollback()
-            logger.error(f"Company creation failed for user {clerk_id}: {str(e)}")
-            raise ValueError(
-                "Company creation failed due to database constraints"
-            ) from e
+        db.flush()
+        logger.info(
+            f"Created new company {new_company.CompanyDetailsID} for user {clerk_id}"
+        )
+        return new_company
 
-    except KeyError as e:
-        logger.error(f"Missing required field in user data: {str(e)}")
-        raise ValueError(f"Invalid user data: missing {str(e)}") from e
-    except SQLAlchemyError as e:
-        logger.error(f"Database error during company creation: {str(e)}")
-        raise ValueError("Database operation failed") from e
     except Exception as e:
-        logger.error(f"Unexpected error in create_company: {str(e)}")
-        raise ValueError("Failed to create company") from e
+        db.rollback()
+        logger.error(f"Error in create_company: {e}")
+        raise
 
 
 def create_user_and_link(
@@ -373,6 +367,27 @@ def sync_clerk_user_metadata(user: UserDetails, company_user: CompanyUser):
         logger.warning(f"Failed to sync Clerk metadata for user {user.ClerkID}: {e}")
 
 
+def get_verified_email(user_data: dict) -> str | None:
+    """
+    Extract the first verified, non-placeholder email from Clerk user data.
+    Returns None if no usable email exists yet.
+    """
+    email_addresses = user_data.get("email_addresses", [])
+    if not email_addresses:
+        return None
+
+    # Pick the first email (or iterate if you want stricter verified filtering)
+    email = email_addresses[0].get("email_address")
+    if not email:
+        return None
+
+    # Skip Clerk placeholders like default@domain
+    if email.startswith("default@"):
+        return None
+
+    return email
+
+
 @app.post("/webhooks/clerk", tags=["Webhooks"])
 async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
     try:
@@ -394,10 +409,33 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
 
         # Event-specific handlers
         if event_type == "user.created":
+            email = get_verified_email(data)
+            if not email:
+                logger.warning(f"Skipping user.created for {data['id']} — no valid email yet")
+                return {"status": "skipped", "reason": "no email"}
+
+            domain = email.split("@")[1]
+
+            if domain in blocked_domains:
+                try:
+                    # Use Clerk SDK to delete the user
+                    clerk_client.users.delete(user_id=clerk_id)
+                    print(f"Deleted blocked user {clerk_id} ({email})")
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to delete user {clerk_id}: {str(e)}",
+                    )
+
+                return {"message": "Webhook received"}
+
             # Create user with retry logic
             user, company_user = await run_in_threadpool(
                 create_user, db, data, use_existing_company
             )
+
+            if not user:  # skipped due to no email yet
+                return {"status": "skipped", "reason": "no valid email"}
 
             # Sync metadata just once
             await run_in_threadpool(sync_clerk_user_metadata, user, company_user)
@@ -488,41 +526,62 @@ async def handle_clerk_webhook(request: Request, db: Session = Depends(get_db)):
 @retry(**RETRY_KWARGS)
 def create_user(
     db: Session, user_data: dict, use_existing_company: bool
-) -> tuple[UserDetails, CompanyUser]:
-    try:
-        clerk_id = user_data["id"]
+) -> tuple[UserDetails | None, CompanyUser | None]:
+    """
+    Idempotent user creation:
+    - Skips if no valid email yet
+    - Reuses existing user + company_user if found
+    - Creates company only once per email
+    """
+    clerk_id = user_data["id"]
 
-        # Check for existing user in a single query
-        existing_user = (
-            db.query(UserDetails)
-            .options(joinedload(UserDetails.DefaultCompany))
-            .filter_by(ClerkID=clerk_id)
+    # Ensure email exists before attempting creation
+    email = get_verified_email(user_data)
+    if not email:
+        logger.warning(f"Skipping user creation for {clerk_id}: no valid email yet")
+        return None, None
+
+    # Check if user already exists
+    existing_user = (
+        db.query(UserDetails)
+        .options(joinedload(UserDetails.DefaultCompany))
+        .filter_by(ClerkID=clerk_id)
+        .first()
+    )
+    if existing_user:
+        logger.info(f"User already exists: {clerk_id}")
+        company_user = (
+            db.query(CompanyUser)
+            .filter_by(
+                UserID=existing_user.ClerkID,
+                CompanyID=existing_user.DefaultCompanyDetailsID,
+            )
             .first()
         )
+        return existing_user, company_user
 
-        if existing_user:
-            logger.info(f"User already exists: {clerk_id}")
-            company_user = (
-                db.query(CompanyUser)
-                .filter_by(
-                    UserID=existing_user.ClerkID,
-                    CompanyID=existing_user.DefaultCompanyDetailsID,
-                )
-                .first()
-            )
-            return existing_user, company_user
-
-        # Start transaction implicitly (handled by FastDI's session)
+    try:
+        # Create company safely (idempotent by email)
         default_currency = get_or_create_default_currency(db)
         admin_role = get_or_create_admin_role(db)
         company = create_company(db, user_data, default_currency.CurrencyID)
+        if not company:
+            return None, None  # no email → skip
 
-        # This will raise if company doesn't exist
-        user = create_user_and_link(
-            db, user_data, admin_role.RoleID, company.CompanyDetailsID
+        # Create the user record
+        user = UserDetails(
+            ClerkID=clerk_id,
+            UserName=f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
+            Email=email,
+            Password="default_password",
+            RoleID=admin_role.RoleID,
+            CompanyDetailsID=company.CompanyDetailsID,
+            DefaultCompanyDetailsID=company.CompanyDetailsID,
         )
+        db.add(user)
+        db.flush()
 
-        # Create the company-user relationship
+        # Link user ↔ company
         company_user = ensure_company_user_relation(
             db=db,
             user_id=user.ClerkID,
@@ -530,19 +589,38 @@ def create_user(
             default_role_name=admin_role.UserRole,
         )
 
-        # Commit everything together
         db.commit()
         db.refresh(user)
         db.refresh(company_user)
 
+        logger.info(f"Created new user {clerk_id} with company {company.CompanyDetailsID}")
         return user, company_user
+
+    except IntegrityError:
+        db.rollback()
+        logger.info(f"User {clerk_id} already created in parallel — reloading")
+        existing_user = (
+            db.query(UserDetails)
+            .options(joinedload(UserDetails.DefaultCompany))
+            .filter_by(ClerkID=clerk_id)
+            .first()
+        )
+        if not existing_user:
+            raise
+        company_user = (
+            db.query(CompanyUser)
+            .filter_by(
+                UserID=existing_user.ClerkID,
+                CompanyID=existing_user.DefaultCompanyDetailsID,
+            )
+            .first()
+        )
+        return existing_user, company_user
 
     except Exception as e:
         db.rollback()
-        logger.error(f"User creation failed: {str(e)}")
-        raise HTTPException(
-            status_code=400, detail=f"Could not create user: {str(e)}"
-        ) from e
+        logger.error(f"User creation failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not create user: {str(e)}")
 
 
 async def update_user(db: Session, user_data: dict):
@@ -1246,6 +1324,7 @@ def summary_counts_with_dates(
 
     return summary
 
+
 @app.get("/v1/headerview/{company_id}", tags=["Header View"])
 def summary_counts(
     company_id: str, current_user: UserDetails = Depends(get_current_user)
@@ -1789,7 +1868,10 @@ def top_supplier_spend(
 
 # Define your POST endpoint
 
-def _project_match_filter(project: SourcingProjectCreate, company_id: str, commodity_id: str):
+
+def _project_match_filter(
+    project: SourcingProjectCreate, company_id: str, commodity_id: str
+):
     # Map all persisted columns you want to include in equality comparison.
     # Skip None so optional fields don't block a match.
     fields_to_match = {
@@ -1813,11 +1895,13 @@ def _project_match_filter(project: SourcingProjectCreate, company_id: str, commo
         "CommodityID": commodity_id,
     }
 
-    return and_(*[
-        getattr(SourcingProjectDetails, col) == val
-        for col, val in fields_to_match.items()
-        if val is not None
-    ])
+    return and_(
+        *[
+            getattr(SourcingProjectDetails, col) == val
+            for col, val in fields_to_match.items()
+            if val is not None
+        ]
+    )
 
 
 @app.post("/v1/projects", tags=["Sourcing Project"])
@@ -1835,7 +1919,9 @@ def create_sourcing_project_endpoint(
         .first()
     )
     if not company:
-        raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Company with ID {company_id} not found"
+        )
 
     # 1) Find-or-create Commodity (scoped by company + all fields)
     commodity = (
@@ -1899,7 +1985,11 @@ def create_sourcing_project_endpoint(
     db.refresh(new_project)
 
     clerk_id = current_user.ClerkID
-    referral_url = build_referral_url_from_clerk_id(clerk_id) if clerk_id else f"{APP_BASE_URL}/sign-up"
+    referral_url = (
+        build_referral_url_from_clerk_id(clerk_id)
+        if clerk_id
+        else f"{APP_BASE_URL}/sign-up"
+    )
 
     # Recipients (only those provided)
     recipients = [
@@ -1929,7 +2019,7 @@ def create_sourcing_project_endpoint(
         new_project.Name,
         referral_url,
         recipients,
-        email_roles
+        email_roles,
     )
 
     return {
@@ -2013,6 +2103,7 @@ def update_sourcing_project_endpoint(
 
     # --- Track email changes (old → new) for the 6 role emails ---
     changed_emails = []  # list[(field_name, new_email)]
+
     def _changed(old_val: str | None, new_val: str | None) -> bool:
         if new_val is None:  # not provided in payload
             return False
@@ -2049,10 +2140,14 @@ def update_sourcing_project_endpoint(
         project.ScmManagerEmail = project_update.ScmManagerEmail
         if project.ScmManagerEmail:
             changed_emails.append(("ScmManagerEmail", project.ScmManagerEmail))
-    if _changed(project.SelectedSupplierPmEmail, project_update.SelectedSupplierPmEmail):
+    if _changed(
+        project.SelectedSupplierPmEmail, project_update.SelectedSupplierPmEmail
+    ):
         project.SelectedSupplierPmEmail = project_update.SelectedSupplierPmEmail
         if project.SelectedSupplierPmEmail:
-            changed_emails.append(("SelectedSupplierPmEmail", project.SelectedSupplierPmEmail))
+            changed_emails.append(
+                ("SelectedSupplierPmEmail", project.SelectedSupplierPmEmail)
+            )
     if _changed(project.BuyerEmail, project_update.BuyerEmail):
         project.BuyerEmail = project_update.BuyerEmail
         if project.BuyerEmail:
@@ -2106,7 +2201,11 @@ def update_sourcing_project_endpoint(
         sender_email = current_user.Email or smtp_username
         sender_display = current_user.UserName or sender_email
         clerk_id = current_user.ClerkID
-        referral_url = build_referral_url_from_clerk_id(clerk_id) if clerk_id else f"{APP_BASE_URL}/sign-up"
+        referral_url = (
+            build_referral_url_from_clerk_id(clerk_id)
+            if clerk_id
+            else f"{APP_BASE_URL}/sign-up"
+        )
 
         background_tasks.add_task(
             send_project_invites_smtp,
@@ -2114,7 +2213,7 @@ def update_sourcing_project_endpoint(
             sender_display,
             project.Name,
             referral_url,
-            list(recipient_roles.keys()),       # only the changed emails
+            list(recipient_roles.keys()),  # only the changed emails
             recipient_roles,  # include roles so copy reads “as the <Role>”
         )
 

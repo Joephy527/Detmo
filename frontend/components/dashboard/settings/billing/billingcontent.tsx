@@ -225,8 +225,6 @@ const billingColumn: ColumnDef<billingTabData>[] = [
 const BillingContent: FC<Props> = ({}) => {
   const { data: billingTableData } = useSubscriptionDetails();
 
-  console.log({ billingTableData });
-
   return (
     <div className="p-4 lg:p-7 lg:lg:px-10 xl:px-20  max-w-[1400px] lg:pt-[40px]">
       <DataTable columns={billingColumn} data={billingTableData} />

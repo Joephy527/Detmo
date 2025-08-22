@@ -105,7 +105,6 @@ export function Pricing() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.log({ errorData });
         throw new Error(errorData.detail || "Payment creation failed");
       }
 
