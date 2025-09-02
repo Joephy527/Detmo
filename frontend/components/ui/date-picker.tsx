@@ -26,6 +26,7 @@ export default function DatePickerComponent({
   style,
   icon,
   dateFormat = "dd/MM/yyyy",
+  isProject = false,
 }: {
   dateValue: string;
   dateName: string;
@@ -34,6 +35,7 @@ export default function DatePickerComponent({
   style?: string;
   icon?: boolean;
   dateFormat?: string;
+  isProject?: boolean;
 }) {
   const [, setParams] = useQueryStates(searchParams, searchParamOption);
 
@@ -82,6 +84,7 @@ export default function DatePickerComponent({
           fromYear={1950}
           toYear={new Date().getFullYear()}
           isEndDate={dateName === "endDate"}
+          isProject={isProject}
         />
       </PopoverContent>
     </Popover>

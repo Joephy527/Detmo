@@ -90,13 +90,15 @@ const UploadCSVDialog = ({ text }: { text?: string }) => {
         setSuccess("PO data uploaded successfully");
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
-        toast.success("PO data uploaded successfully");
+        toast.success("PO data uploaded successfully", { duration: 10000 });
 
         // Close dialog after successful upload with a short delay
       } else {
         setUploadProgress(0);
         setError(result.error || "Failed to upload CSV");
-        toast.error(result.error || "Failed to upload CSV");
+        toast.error(result.error || "Failed to upload CSV", {
+          duration: 10000,
+        });
       }
       setTimeout(() => {
         setIsDialogOpen(false);
@@ -108,7 +110,7 @@ const UploadCSVDialog = ({ text }: { text?: string }) => {
       const errorMessage =
         err instanceof Error ? err.message : "An unexpected error occurred";
       setError(errorMessage);
-      toast.error(errorMessage);
+      toast.error(errorMessage, { duration: 10000 });
     } finally {
       setIsUploading(false);
     }

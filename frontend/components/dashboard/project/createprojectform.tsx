@@ -35,7 +35,7 @@ import { createProject } from "@/actions/projects";
 import { useQueryStates } from "nuqs";
 import {
   searchParamOption,
-  searchParams,
+  searchParamsProject,
 } from "../spend-analysis-comp/search-params";
 
 interface Props {
@@ -48,7 +48,7 @@ export default function Createprojectform({
   CommodityPartNumber,
 }: Props) {
   const [{ startDate, endDate }] = useQueryStates(
-    searchParams,
+    searchParamsProject,
     searchParamOption,
   );
   const router = useRouter();
@@ -143,12 +143,12 @@ export default function Createprojectform({
     const res = await createProject(values);
 
     if (res?.message) {
-      toast.success(res.message);
+      toast.success(res.message, { duration: 10000 });
       router.push(
         `/dashboard/projects/evaluate-suppliers?project_id=${res.project_id}`,
       );
     } else {
-      toast.error("Something went wrong");
+      toast.error("Something went wrong", { duration: 10000 });
     }
 
     setIsSubmitting(false);
@@ -323,6 +323,7 @@ export default function Createprojectform({
                             }
                             placeholder="dd/mm/yyyy"
                             style="w-full h-[45px]"
+                            isProject
                           />
                         </FormControl>
                         <FormMessage />
@@ -346,6 +347,7 @@ export default function Createprojectform({
                             }
                             placeholder="dd/mm/yyyy"
                             style="w-full h-[45px]"
+                            isProject
                           />
                         </FormControl>
                         <FormMessage />

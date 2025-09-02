@@ -38,7 +38,7 @@ const page: FC<pageProps> = ({ searchParams }) => {
   useEffect(() => {
     if (status === "signed_up") {
       toast.success("User created. Please login again to access detmo.", {
-        duration: 5000,
+        duration: 10000,
       });
     }
   }, [status]);

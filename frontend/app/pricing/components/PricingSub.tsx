@@ -61,14 +61,16 @@ export function Pricing() {
             if (data.items[0]?.Email) {
               setBeneficiaryEmail(data.items[0].Email);
             } else {
-              toast.error("User email not found in response");
+              toast.error("User email not found in response", {
+                duration: 10000,
+              });
             }
           } else {
             throw new Error("Failed to fetch beneficiary");
           }
         } catch (error) {
           toast.error("Failed to load user details", {
-            duration: 4000,
+            duration: 10000,
             position: "top-center",
           });
           console.error("Failed to fetch beneficiary:", error);
@@ -110,7 +112,10 @@ export function Pricing() {
 
       const jsonData = await response.json();
       const data = jsonData.subscription;
-      toast.success("Redirecting to payment...", { id: paymentToast });
+      toast.success("Redirecting to payment...", {
+        id: paymentToast,
+        duration: 10000,
+      });
 
       // window.open(jsonData.payment_page_url, "_blank", "noopener,noreferrer");
 
@@ -126,8 +131,8 @@ export function Pricing() {
           subscription_id: data.RazorpaySubscriptionID,
           handler: function (response: any) {
             toast.success(
-              `Payment successful! ID: ${response.razorpay_payment_id}`,
-              { duration: 5000 },
+              `Payment successful. Please wait for 5 minutes for it to take effect. Payment ID: ${response.razorpay_payment_id}`,
+              { duration: 10000 },
             );
 
             router.push(next);
@@ -140,7 +145,10 @@ export function Pricing() {
             beneficiary_id: userId || user?.id,
           },
           modal: {
-            ondismiss: () => toast.error("Payment window closed"),
+            ondismiss: () =>
+              toast.error("Payment window closed", {
+                duration: 10000,
+              }),
             escape: false, // Prevent closing by ESC key
           },
           /* theme: {
@@ -155,9 +163,13 @@ export function Pricing() {
               "Beneficiary already has an active subscription",
             )
           ) {
-            toast.success(`Subscription already paid for!`, { duration: 5000 });
+            toast.success(`Subscription already paid for!`, {
+              duration: 10000,
+            });
           }
-          toast.error(`Payment failed: ${response.error.description}`);
+          toast.error(`Payment failed: ${response.error.description}`, {
+            duration: 10000,
+          });
         });
         rzp.open();
       } else {
@@ -166,6 +178,7 @@ export function Pricing() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Payment failed", {
         id: paymentToast,
+        duration: 10000,
       });
       console.error("Payment error:", error);
     } finally {

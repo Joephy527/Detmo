@@ -92,10 +92,10 @@ const CommentsWrapper: FC<Props> = ({
       });
 
       if (!res) {
-        toast.error("Failed to post comment");
+        toast.error("Failed to post comment", { duration: 10000 });
       }
     } catch (error) {
-      toast.error("Something went wrong");
+      toast.error("Something went wrong", { duration: 10000 });
       console.error(error);
     }
   };

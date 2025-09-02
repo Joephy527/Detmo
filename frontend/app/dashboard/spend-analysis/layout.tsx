@@ -18,7 +18,9 @@ export default function ProjectsLayout({
 
     if (toastMessage && !hasShownToast.current) {
       hasShownToast.current = true; // Prevent second toast
-      toast.error(toastMessage);
+      toast.error(toastMessage, {
+        duration: 10000,
+      });
 
       const params = new URLSearchParams(searchParams.toString());
       params.delete("t_m");

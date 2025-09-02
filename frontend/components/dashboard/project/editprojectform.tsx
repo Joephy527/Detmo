@@ -35,7 +35,7 @@ import toast from "react-hot-toast";
 import { ProjectType } from "@/lib/types";
 import {
   searchParamOption,
-  searchParams,
+  searchParamsProject,
 } from "../spend-analysis-comp/search-params";
 import { useQueryStates } from "nuqs";
 
@@ -47,7 +47,7 @@ export default function Createprojectform({
   project_promise: Promise<{ items: ProjectType[]; total: number } | null>;
 }) {
   const [{ startDate, endDate }, setParams] = useQueryStates(
-    searchParams,
+    searchParamsProject,
     searchParamOption,
   );
 
@@ -148,9 +148,9 @@ export default function Createprojectform({
     const res = await updateProject(project_id, values);
 
     if (res?.success) {
-      toast.success("Project updated successfully");
+      toast.success("Project updated successfully", { duration: 10000 });
     } else {
-      toast.error("Something went wrong");
+      toast.error("Something went wrong", { duration: 10000 });
     }
 
     setIsSubmitting(false);
@@ -331,6 +331,7 @@ export default function Createprojectform({
                             }
                             placeholder="dd/mm/yyyy"
                             style="w-full h-[45px]"
+                            isProject
                           />
                         </FormControl>
                         <FormMessage />
@@ -354,6 +355,7 @@ export default function Createprojectform({
                             }
                             placeholder="dd/mm/yyyy"
                             style="w-full h-[45px]"
+                            isProject
                           />
                         </FormControl>
                         <FormMessage />

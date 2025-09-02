@@ -12,10 +12,12 @@ import { useQueryStates } from "nuqs";
 import {
   searchParamOption,
   searchParams,
+  searchParamsProject,
 } from "../dashboard/spend-analysis-comp/search-params";
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker> & {
   isEndDate?: boolean;
+  isProject?: boolean;
 };
 
 function Calendar({
@@ -23,10 +25,11 @@ function Calendar({
   classNames,
   showOutsideDays = true,
   isEndDate = false,
+  isProject = false,
   ...props
 }: CalendarProps) {
   const [{ startDate, endDate }] = useQueryStates(
-    searchParams,
+    !isProject ? searchParams : searchParamsProject,
     searchParamOption,
   );
 

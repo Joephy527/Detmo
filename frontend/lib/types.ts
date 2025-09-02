@@ -29,12 +29,12 @@ export type CreateProjectType = {
   EndDate: string;
   Phase: string;
   Status: string;
-  SourcingPmEmail: string;
-  ScmManagerEmail: string;
-  SelectedSupplierPmEmail: string;
-  BuyerEmail: string;
-  ProjectSponserEmail: string;
-  FinancePocEmail: string;
+  SourcingPmEmail?: string;
+  ScmManagerEmail?: string;
+  SelectedSupplierPmEmail?: string;
+  BuyerEmail?: string;
+  ProjectSponserEmail?: string;
+  FinancePocEmail?: string;
   ProjectInterval: string;
   CommodityName: string;
   CommodityAffectedProduct: string;

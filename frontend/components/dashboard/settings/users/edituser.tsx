@@ -64,10 +64,10 @@ export default function Edituser({ data }: { data: UserEditType }) {
       const resRole = await updateUserRole({ ...data, ...changed });
 
       if (resRole?.success) {
-        toast.success("User role updated successfully");
+        toast.success("User role updated successfully", { duration: 10000 });
         success = true;
       } else {
-        toast.error("Something went wrong editing user!");
+        toast.error("Something went wrong editing user!", { duration: 10000 });
       }
     }
     if (changed.UserName || changed.Email) {
@@ -75,10 +75,10 @@ export default function Edituser({ data }: { data: UserEditType }) {
       const res = await updateUser({ ...data, ...changed });
 
       if (res?.success) {
-        toast.success("User updated successfully");
+        toast.success("User updated successfully", { duration: 10000 });
         success = true;
       } else {
-        toast.error("Something went wrong editing user!");
+        toast.error("Something went wrong editing user!", { duration: 10000 });
       }
     }
     if (success) {

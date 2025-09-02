@@ -12,7 +12,7 @@ export default function BlockedPage() {
 
   useEffect(() => {
     toast.error("Please use your business email.", {
-      duration: 5000,
+      duration: 10000,
     });
     signOut({ redirectUrl: "/blocked" }).catch(() => {});
   }, [signOut]);

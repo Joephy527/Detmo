@@ -29,7 +29,9 @@ const Refer: FC<ReferProps> = ({}) => {
 
   const onCopy = async () => {
     await navigator.clipboard.writeText(link);
-    toast.success("link copied");
+    toast.success("link copied", {
+      duration: 10000,
+    });
   };
 
   return (

@@ -21,10 +21,12 @@ export default function DeleteCompany({ company_id }: { company_id: string }) {
     const response = await deleteCompanyDetails(company_id);
     setIsDeleting(false);
     if (response?.success) {
-      toast.success("Company deleted successfully");
+      toast.success("Company deleted successfully", { duration: 10000 });
       window.location.reload();
     } else {
-      toast.error(`Something went wrong - Please try again later`);
+      toast.error(`Something went wrong - Please try again later`, {
+        duration: 10000,
+      });
     }
   };
   return (

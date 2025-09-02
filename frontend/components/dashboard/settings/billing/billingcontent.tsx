@@ -35,6 +35,37 @@ type billingTabData = {
   Currency?: string;
 };
 
+function formatAmount(amount?: number, currency?: string): string | null {
+  if (!amount || !currency) {
+    return null;
+  }
+
+  const upperCurrency = currency.toUpperCase();
+
+  // Currencies without fractional units
+  const noDecimalCurrencies = new Set(["JPY", "KRW", "VND"]);
+
+  let majorAmount: number;
+
+  if (noDecimalCurrencies.has(upperCurrency)) {
+    majorAmount = amount; // already in whole units
+  } else {
+    majorAmount = amount / 100; // convert minor → major
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: upperCurrency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(majorAmount);
+}
+
+function capitalizeFirstLetter(str: string): string {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 const billingColumn: ColumnDef<billingTabData>[] = [
   {
     accessorKey: "date",
@@ -82,9 +113,10 @@ const billingColumn: ColumnDef<billingTabData>[] = [
     },
     cell: ({ row }) => {
       const data = row.original;
+      const amountDisplay = formatAmount(data.Amount, data.Currency);
       return (
         <div className="font-[400] text-[14px] text-[#3B3C41]">
-          {`${data.Amount ?? 3397.95} ${data.Currency ?? "INR"}`}
+          {`${amountDisplay ?? `₹3,397.95`}`}
         </div>
       );
     },
@@ -146,8 +178,10 @@ const billingColumn: ColumnDef<billingTabData>[] = [
 
       return (
         <div className="flex gap-4 items-center">
-          <div className="font-[400] text-[14px] text-[#3B3C41]">
-            {data.Status}
+          <div
+            className={`font-[400] text-[14px] text-[#3B3C41] ${data.Status === "active" ? "bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full text-xs font-medium" : ""}`}
+          >
+            {capitalizeFirstLetter(data.Status)}
           </div>
           {data.Status === "active" && (
             <div>

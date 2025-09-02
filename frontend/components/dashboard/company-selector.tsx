@@ -109,13 +109,15 @@ export default function CompanySelector({
       },
       {
         onSuccess: (data: any) => {
-          toast.success("Company created successfully");
+          toast.success("Company created successfully", { duration: 10000 });
           setNewCompanyName("");
 
           window?.location?.reload();
         },
         onError: () => {
-          toast.error("Something went wrong while creating the company");
+          toast.error("Something went wrong while creating the company", {
+            duration: 10000,
+          });
         },
       },
     );
@@ -128,13 +130,13 @@ export default function CompanySelector({
 
       updateCompany(companyId, {
         onSuccess: (res) => {
-          toast.success("Company updated successfully");
+          toast.success("Company updated successfully", { duration: 10000 });
 
           window?.location?.reload();
         },
         onError: (error) => {
           console.error("Error switching company:", error);
-          toast.error("Something went wrong");
+          toast.error("Something went wrong", { duration: 10000 });
         },
       });
     },

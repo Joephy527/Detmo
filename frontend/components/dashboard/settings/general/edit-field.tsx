@@ -86,12 +86,12 @@ const EditField = ({
     });
 
     if (res?.success) {
-      toast.success(`${label} updated successfully`);
+      toast.success(`${label} updated successfully`, { duration: 10000 });
       setOpen(false);
       return;
     }
 
-    toast.error("Something went wrong");
+    toast.error("Something went wrong", { duration: 10000 });
   };
 
   return (
